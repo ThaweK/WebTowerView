@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebTowerView - Dokumentacja</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #00ff88;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h1 span {
+            font-size: 0.9em;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 1.1em;
+            margin-bottom: 40px;
+        }
+
+        h2 {
+            color: #88aaff;
+            font-size: 1.4em;
+            margin: 30px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #3a3a5a;
+        }
+
+        h3 {
+            color: #66ddaa;
+            font-size: 1.1em;
+            margin: 20px 0 10px 0;
+        }
+
+        .card {
+            background: rgba(30, 30, 50, 0.8);
+            border: 1px solid #3a3a5a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .architecture {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            background: #0d0d1a;
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            line-height: 1.6;
+        }
+
+        .architecture .folder {
+            color: #88aaff;
+        }
+
+        .architecture .file {
+            color: #aaa;
+        }
+
+        .architecture .comment {
+            color: #666;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px 15px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+
+        th {
+            background: rgba(0, 100, 150, 0.3);
+            color: #88aaff;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: rgba(0, 100, 150, 0.1);
+        }
+
+        .feature-icon {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+
+        code {
+            background: #0d0d1a;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+            color: #00ff88;
+        }
+
+        pre {
+            background: #0d0d1a;
+            padding: 15px 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 10px 0;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .command {
+            color: #ffcc00;
+        }
+
+        .comment-code {
+            color: #666;
+        }
+
+        .steps {
+            counter-reset: step;
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .steps li {
+            counter-increment: step;
+            padding: 10px 0 10px 50px;
+            position: relative;
+        }
+
+        .steps li::before {
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 8px;
+            width: 30px;
+            height: 30px;
+            background: #2a4a6a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .keyboard {
+            display: inline-flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        kbd {
+            background: #3a3a5a;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            border: 1px solid #4a4a6a;
+            box-shadow: 0 2px 0 #2a2a4a;
+        }
+
+        .highlight {
+            background: rgba(0, 255, 136, 0.1);
+            border-left: 3px solid #00ff88;
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .warning {
+            background: rgba(255, 200, 0, 0.1);
+            border-left: 3px solid #ffcc00;
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        a {
+            color: #00ff88;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #2a4a6a;
+            border: 1px solid #3a6a9a;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-decoration: none;
+            margin: 10px 10px 10px 0;
+        }
+
+        .btn:hover {
+            background: #3a6a9a;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: #1a6a4a;
+            border-color: #2a8a6a;
+        }
+
+        .btn-primary:hover {
+            background: #2a8a6a;
+        }
+
+        .tech-stack {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        .tech-badge {
+            background: #2a2a4a;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            border: 1px solid #3a3a5a;
+        }
+
+        footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #3a3a5a;
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span>🗼</span> WebTowerView</h1>
+        <p class="subtitle">Lekka aplikacja webowa do wizualizacji 3D lotniska z perspektywy wieży kontroli lotów</p>
+
+        <a href="index.html" class="btn btn-primary">▶ Uruchom aplikację</a>
+        <a href="https://cesium.com/ion/tokens" class="btn" target="_blank">🔑 Pobierz token Cesium</a>
+
+        <!-- Architektura -->
+        <h2>📁 Architektura projektu</h2>
+        <div class="card">
+            <div class="architecture">
+<span class="folder">WebTowerView/</span>
+├── <span class="file">index.html</span>           <span class="comment"># Główny plik aplikacji z UI</span>
+├── <span class="file">docs.html</span>            <span class="comment"># Ta dokumentacja</span>
+├── <span class="file">package.json</span>         <span class="comment"># Konfiguracja projektu</span>
+├── <span class="file">README.md</span>            <span class="comment"># Dokumentacja tekstowa</span>
+│
+└── <span class="folder">src/</span>
+    ├── <span class="folder">css/</span>
+    │   └── <span class="file">style.css</span>       <span class="comment"># Style aplikacji</span>
+    │
+    └── <span class="folder">js/</span>
+        ├── <span class="file">config.js</span>       <span class="comment"># Konfiguracja + lista lotnisk</span>
+        ├── <span class="file">app.js</span>          <span class="comment"># Główna aplikacja</span>
+        │
+        ├── <span class="folder">core/</span>
+        │   ├── <span class="file">towerCamera.js</span>     <span class="comment"># Kontrola widoku z wieży</span>
+        │   ├── <span class="file">airportOverlay.js</span>  <span class="comment"># Własne obiekty lotniskowe</span>
+        │   └── <span class="file">aircraftManager.js</span> <span class="comment"># Zarządzanie samolotami</span>
+        │
+        ├── <span class="folder">ui/</span>
+        │   ├── <span class="file">controlPanel.js</span>    <span class="comment"># Panel kontrolny</span>
+        │   └── <span class="file">modals.js</span>          <span class="comment"># Okna dialogowe</span>
+        │
+        └── <span class="folder">utils/</span>
+            ├── <span class="file">coordinates.js</span>     <span class="comment"># Konwersja współrzędnych</span>
+            └── <span class="file">geojsonLoader.js</span>   <span class="comment"># Parser GeoJSON</span>
+            </div>
+        </div>
+
+        <!-- Funkcje -->
+        <h2>✨ Funkcje</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Funkcja</th>
+                        <th>Opis</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="feature-icon">🛰️</span> Widok satelitarny</td>
+                        <td>CesiumJS z mapami OpenStreetMap</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">🏢</span> Budynki 3D</td>
+                        <td>OSM Buildings (wymaga tokenu Cesium Ion)</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">⛰️</span> Teren 3D</td>
+                        <td>Globalny teren z wysokościami (wymaga tokenu)</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">🗼</span> Widok z wieży</td>
+                        <td>Stała pozycja kamery, regulowana wysokość</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">🎥</span> Kontrola kamery</td>
+                        <td>Obrót, pochylenie, zoom myszką i klawiaturą</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">✏️</span> Własny overlay</td>
+                        <td>Dodawanie pasów startowych, dróg kołowania, apronów</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">📄</span> Import GeoJSON</td>
+                        <td>Wczytywanie layoutu lotniska z plików</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">✈️</span> Samoloty</td>
+                        <td>Dodawanie samolotów na współrzędnych geograficznych</td>
+                    </tr>
+                    <tr>
+                        <td><span class="feature-icon">🎮</span> Demo</td>
+                        <td>Przykładowe dane lotniska jednym kliknięciem</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Uruchomienie -->
+        <h2>🚀 Jak uruchomić</h2>
+        <div class="card">
+            <h3>Opcja 1: Node.js (npx serve)</h3>
+            <pre><code><span class="command">npx serve .</span>
+<span class="comment-code"># Otwórz http://localhost:3000</span></code></pre>
+
+            <h3>Opcja 2: Python</h3>
+            <pre><code><span class="command">python -m http.server 8000</span>
+<span class="comment-code"># Otwórz http://localhost:8000</span></code></pre>
+
+            <h3>Opcja 3: Bezpośrednio</h3>
+            <p>Otwórz plik <code>index.html</code> w przeglądarce (niektóre funkcje mogą nie działać z powodu CORS)</p>
+        </div>
+
+        <!-- Cesium Ion -->
+        <h2>🔑 Cesium Ion Token (opcjonalnie)</h2>
+        <div class="card">
+            <p>Dla pełnej funkcjonalności (budynki 3D, teren) potrzebujesz darmowego tokenu:</p>
+
+            <ol class="steps">
+                <li>Zarejestruj się na <a href="https://cesium.com/ion/" target="_blank">cesium.com/ion</a></li>
+                <li>Wygeneruj Access Token w panelu</li>
+                <li>Otwórz plik <code>src/js/config.js</code></li>
+                <li>Wklej token:
+                    <pre><code>CESIUM_ION_TOKEN: 'twój-token-tutaj',</code></pre>
+                </li>
+            </ol>
+
+            <div class="highlight">
+                <strong>Darmowy tier obejmuje:</strong><br>
+                • 5 GB storage<br>
+                • 100 GB streaming/miesiąc<br>
+                • Globalny teren 3D<br>
+                • Budynki 3D z OpenStreetMap
+            </div>
+        </div>
+
+        <!-- Sterowanie -->
+        <h2>🎮 Sterowanie</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Akcja</th>
+                        <th>Kontrola</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Obrót kamery</td>
+                        <td><kbd>LPM</kbd> + przeciągnij</td>
+                    </tr>
+                    <tr>
+                        <td>Pochylenie</td>
+                        <td><kbd>Scroll</kbd> lub <kbd>↑</kbd> <kbd>↓</kbd></td>
+                    </tr>
+                    <tr>
+                        <td>Zmiana kierunku</td>
+                        <td><kbd>←</kbd> <kbd>→</kbd></td>
+                    </tr>
+                    <tr>
+                        <td>Reset widoku</td>
+                        <td><kbd>R</kbd></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- GeoJSON -->
+        <h2>📄 Format GeoJSON</h2>
+        <div class="card">
+            <p>Możesz wczytać layout lotniska z pliku GeoJSON:</p>
+
+            <pre><code>{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "aeroway": "runway", "ref": "09/27" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[20.95, 52.16], [20.98, 52.16]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "aeroway": "taxiway", "ref": "A" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[20.95, 52.162], [20.98, 52.162]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "aeroway": "apron", "name": "Main Apron" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[20.96, 52.163], [20.97, 52.163],
+                         [20.97, 52.166], [20.96, 52.166], [20.96, 52.163]]]
+      }
+    }
+  ]
+}</code></pre>
+
+            <h3>Obsługiwane typy (aeroway):</h3>
+            <table>
+                <tr><td><code>runway</code></td><td>Pas startowy</td></tr>
+                <tr><td><code>taxiway</code></td><td>Droga kołowania</td></tr>
+                <tr><td><code>apron</code></td><td>Płyta postojowa</td></tr>
+                <tr><td><code>terminal</code></td><td>Terminal</td></tr>
+                <tr><td><code>hangar</code></td><td>Hangar</td></tr>
+            </table>
+        </div>
+
+        <!-- Technologie -->
+        <h2>🛠️ Technologie</h2>
+        <div class="card">
+            <div class="tech-stack">
+                <span class="tech-badge">CesiumJS (Apache 2.0)</span>
+                <span class="tech-badge">OpenStreetMap</span>
+                <span class="tech-badge">OSM Buildings</span>
+                <span class="tech-badge">Vanilla JavaScript</span>
+                <span class="tech-badge">CSS3</span>
+            </div>
+            <p style="margin-top: 15px; color: #888;">
+                Brak zależności npm - wszystko ładowane z CDN. Zero bundlerów, zero kompilacji.
+            </p>
+        </div>
+
+        <!-- Lotniska -->
+        <h2>🌍 Wbudowane lotniska</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ICAO</th>
+                        <th>Nazwa</th>
+                        <th>Lokalizacja</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>EPWA</code></td><td>Warsaw Chopin</td><td>52.1657°N, 20.9671°E</td></tr>
+                    <tr><td><code>EPMO</code></td><td>Warsaw Modlin</td><td>52.4511°N, 20.6518°E</td></tr>
+                    <tr><td><code>EPKK</code></td><td>Krakow Balice</td><td>50.0777°N, 19.7848°E</td></tr>
+                    <tr><td><code>EPGD</code></td><td>Gdansk Lech Walesa</td><td>54.3776°N, 18.4662°E</td></tr>
+                    <tr><td><code>KJFK</code></td><td>New York JFK</td><td>40.6413°N, 73.7781°W</td></tr>
+                    <tr><td><code>EGLL</code></td><td>London Heathrow</td><td>51.4700°N, 0.4543°W</td></tr>
+                    <tr><td><code>EDDF</code></td><td>Frankfurt</td><td>50.0379°N, 8.5622°E</td></tr>
+                    <tr><td><code>LFPG</code></td><td>Paris CDG</td><td>49.0097°N, 2.5479°E</td></tr>
+                </tbody>
+            </table>
+            <p style="margin-top: 10px; color: #888;">
+                Wpisz kod ICAO w pole wyszukiwania lub wprowadź własne współrzędne.
+            </p>
+        </div>
+
+        <footer>
+            WebTowerView &copy; 2025 | MIT License |
+            <a href="https://github.com/CesiumGS/cesium" target="_blank">Powered by CesiumJS</a>
+        </footer>
+    </div>
+</body>
+</html>
