@@ -1,124 +1,71 @@
 /**
- * Coordinate conversion utilities
- * Converts between geographic coordinates (lat/lon) and local 3D scene coordinates
+ * Coordinate utilities for WebTowerView
+ * Works with Cesium's coordinate system
  */
 
-const CoordinateSystem = {
-    // Reference point (center of the airport)
-    referencePoint: {
-        lat: 52.1657,  // Default: Warsaw Chopin Airport
-        lon: 20.9671,
-        alt: 110       // meters above sea level
-    },
-
-    // Earth radius in meters
-    EARTH_RADIUS: 6371000,
-
-    // Scale factor (1 unit = 1 meter in scene)
-    scale: 1,
-
-    /**
-     * Set the reference point for coordinate conversion
-     * @param {number} lat - Latitude in degrees
-     * @param {number} lon - Longitude in degrees
-     * @param {number} alt - Altitude in meters
-     */
-    setReferencePoint(lat, lon, alt = 0) {
-        this.referencePoint = { lat, lon, alt };
-    },
-
+const Coordinates = {
     /**
      * Convert degrees to radians
-     * @param {number} degrees
-     * @returns {number} radians
      */
     toRadians(degrees) {
-        return degrees * Math.PI / 180;
+        return Cesium.Math.toRadians(degrees);
     },
 
     /**
      * Convert radians to degrees
-     * @param {number} radians
-     * @returns {number} degrees
      */
     toDegrees(radians) {
-        return radians * 180 / Math.PI;
+        return Cesium.Math.toDegrees(radians);
     },
 
     /**
-     * Convert geographic coordinates to local 3D coordinates
-     * Uses equirectangular approximation (good for small areas)
+     * Create Cesium Cartesian3 from lat/lon/alt
      * @param {number} lat - Latitude in degrees
      * @param {number} lon - Longitude in degrees
-     * @param {number} alt - Altitude in meters (optional)
-     * @returns {Object} {x, y, z} in scene units
+     * @param {number} alt - Altitude in meters (default 0)
+     * @returns {Cesium.Cartesian3}
      */
-    geoToLocal(lat, lon, alt = 0) {
-        const refLat = this.toRadians(this.referencePoint.lat);
-        const refLon = this.toRadians(this.referencePoint.lon);
-        const pointLat = this.toRadians(lat);
-        const pointLon = this.toRadians(lon);
-
-        // Calculate X (East-West) - positive is East
-        const x = (pointLon - refLon) * Math.cos(refLat) * this.EARTH_RADIUS * this.scale;
-
-        // Calculate Z (North-South) - positive is North (but in Three.js -Z is forward)
-        const z = -(pointLat - refLat) * this.EARTH_RADIUS * this.scale;
-
-        // Y is altitude relative to reference
-        const y = (alt - this.referencePoint.alt) * this.scale;
-
-        return { x, y, z };
+    fromLatLonAlt(lat, lon, alt = 0) {
+        return Cesium.Cartesian3.fromDegrees(lon, lat, alt);
     },
 
     /**
-     * Convert local 3D coordinates to geographic coordinates
-     * @param {number} x - X position in scene
-     * @param {number} y - Y position in scene (altitude)
-     * @param {number} z - Z position in scene
-     * @returns {Object} {lat, lon, alt} in degrees and meters
+     * Get lat/lon/alt from Cesium Cartesian3
+     * @param {Cesium.Cartesian3} cartesian
+     * @returns {Object} {lat, lon, alt}
      */
-    localToGeo(x, y, z) {
-        const refLat = this.toRadians(this.referencePoint.lat);
-        const refLon = this.toRadians(this.referencePoint.lon);
-
-        // Convert back to lat/lon
-        const lon = this.toDegrees(refLon + (x / this.scale) / (this.EARTH_RADIUS * Math.cos(refLat)));
-        const lat = this.toDegrees(refLat - (z / this.scale) / this.EARTH_RADIUS);
-        const alt = (y / this.scale) + this.referencePoint.alt;
-
-        return { lat, lon, alt };
+    toLatLonAlt(cartesian) {
+        const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+        return {
+            lat: this.toDegrees(cartographic.latitude),
+            lon: this.toDegrees(cartographic.longitude),
+            alt: cartographic.height
+        };
     },
 
     /**
-     * Calculate distance between two geographic points in meters
-     * Uses Haversine formula
+     * Calculate distance between two points in meters
      * @param {number} lat1
      * @param {number} lon1
      * @param {number} lat2
      * @param {number} lon2
      * @returns {number} distance in meters
      */
-    calculateDistance(lat1, lon1, lat2, lon2) {
-        const R = this.EARTH_RADIUS;
-        const dLat = this.toRadians(lat2 - lat1);
-        const dLon = this.toRadians(lon2 - lon1);
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                  Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) *
-                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
+    distance(lat1, lon1, lat2, lon2) {
+        const pos1 = this.fromLatLonAlt(lat1, lon1, 0);
+        const pos2 = this.fromLatLonAlt(lat2, lon2, 0);
+        return Cesium.Cartesian3.distance(pos1, pos2);
     },
 
     /**
-     * Calculate bearing between two geographic points
+     * Calculate bearing between two points
      * @param {number} lat1
      * @param {number} lon1
      * @param {number} lat2
      * @param {number} lon2
      * @returns {number} bearing in degrees (0-360, 0=North)
      */
-    calculateBearing(lat1, lon1, lat2, lon2) {
+    bearing(lat1, lon1, lat2, lon2) {
         const dLon = this.toRadians(lon2 - lon1);
         const lat1Rad = this.toRadians(lat1);
         const lat2Rad = this.toRadians(lat2);
@@ -132,38 +79,86 @@ const CoordinateSystem = {
     },
 
     /**
-     * Convert heading (degrees from north) to Three.js rotation
-     * In Three.js, rotation.y = 0 points along positive X
-     * @param {number} heading - Heading in degrees (0 = North, 90 = East)
-     * @returns {number} rotation in radians for Three.js
+     * Calculate destination point given start, bearing and distance
+     * @param {number} lat - Start latitude
+     * @param {number} lon - Start longitude
+     * @param {number} bearing - Bearing in degrees
+     * @param {number} distance - Distance in meters
+     * @returns {Object} {lat, lon}
      */
-    headingToRotation(heading) {
-        // Convert: 0° North -> -PI/2, 90° East -> 0, etc.
-        return this.toRadians(90 - heading);
+    destinationPoint(lat, lon, bearing, distance) {
+        const R = 6371000; // Earth radius in meters
+        const d = distance / R;
+        const brng = this.toRadians(bearing);
+        const lat1 = this.toRadians(lat);
+        const lon1 = this.toRadians(lon);
+
+        const lat2 = Math.asin(
+            Math.sin(lat1) * Math.cos(d) +
+            Math.cos(lat1) * Math.sin(d) * Math.cos(brng)
+        );
+        const lon2 = lon1 + Math.atan2(
+            Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
+            Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+        );
+
+        return {
+            lat: this.toDegrees(lat2),
+            lon: this.toDegrees(lon2)
+        };
     },
 
     /**
-     * Convert Three.js rotation to heading
-     * @param {number} rotation - Rotation in radians
-     * @returns {number} heading in degrees
+     * Create polygon coordinates for a runway given start/end points and width
+     * @param {number} startLat
+     * @param {number} startLon
+     * @param {number} endLat
+     * @param {number} endLon
+     * @param {number} width - Width in meters
+     * @returns {Array} Array of [lon, lat] pairs
      */
-    rotationToHeading(rotation) {
-        let heading = 90 - this.toDegrees(rotation);
-        return (heading + 360) % 360;
+    createRunwayPolygon(startLat, startLon, endLat, endLon, width) {
+        const bearing = this.bearing(startLat, startLon, endLat, endLon);
+        const perpendicular = (bearing + 90) % 360;
+        const halfWidth = width / 2;
+
+        // Four corners of the runway
+        const p1 = this.destinationPoint(startLat, startLon, perpendicular, halfWidth);
+        const p2 = this.destinationPoint(startLat, startLon, (perpendicular + 180) % 360, halfWidth);
+        const p3 = this.destinationPoint(endLat, endLon, (perpendicular + 180) % 360, halfWidth);
+        const p4 = this.destinationPoint(endLat, endLon, perpendicular, halfWidth);
+
+        return [
+            [p1.lon, p1.lat],
+            [p2.lon, p2.lat],
+            [p3.lon, p3.lat],
+            [p4.lon, p4.lat],
+            [p1.lon, p1.lat]  // Close polygon
+        ];
     },
 
     /**
      * Format coordinates for display
      * @param {number} lat
      * @param {number} lon
-     * @returns {string} formatted string
+     * @returns {string}
      */
-    formatCoordinates(lat, lon) {
+    format(lat, lon) {
         const latDir = lat >= 0 ? 'N' : 'S';
         const lonDir = lon >= 0 ? 'E' : 'W';
         return `${Math.abs(lat).toFixed(5)}°${latDir} ${Math.abs(lon).toFixed(5)}°${lonDir}`;
+    },
+
+    /**
+     * Format heading for display
+     * @param {number} heading - Heading in degrees
+     * @returns {string}
+     */
+    formatHeading(heading) {
+        const normalized = ((heading % 360) + 360) % 360;
+        return `${Math.round(normalized).toString().padStart(3, '0')}°`;
     }
 };
 
 // Make available globally
-window.CoordinateSystem = CoordinateSystem;
+window.Coordinates = Coordinates;

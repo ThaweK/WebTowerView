@@ -4,17 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebTowerView - Airport 3D Tower View</title>
+
+    <!-- Cesium -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+
     <link rel="stylesheet" href="src/css/style.css">
 </head>
 <body>
     <div id="app">
-        <!-- 3D Canvas Container -->
-        <div id="canvas-container"></div>
+        <!-- Cesium Container -->
+        <div id="cesiumContainer"></div>
 
         <!-- Control Panel -->
         <div id="control-panel">
             <h2>🗼 WebTowerView</h2>
 
+            <!-- Airport Selection -->
+            <div class="panel-section">
+                <h3>Lotnisko</h3>
+                <div class="control-group">
+                    <label>Wyszukaj (ICAO/nazwa):</label>
+                    <input type="text" id="airport-search" placeholder="np. EPWA, KJFK...">
+                    <button id="goto-airport-btn">Idź do</button>
+                </div>
+                <div class="control-group">
+                    <label>Lub współrzędne:</label>
+                    <div class="coords-input">
+                        <input type="number" id="input-lat" placeholder="Lat" step="0.0001" value="52.1657">
+                        <input type="number" id="input-lon" placeholder="Lon" step="0.0001" value="20.9671">
+                    </div>
+                    <button id="goto-coords-btn">Ustaw wieżę</button>
+                </div>
+            </div>
+
+            <!-- Tower Settings -->
             <div class="panel-section">
                 <h3>Wieża</h3>
                 <div class="control-group">
@@ -24,78 +48,193 @@
                 </div>
             </div>
 
+            <!-- Camera Controls -->
             <div class="panel-section">
                 <h3>Kamera</h3>
                 <div class="control-group">
-                    <label>Zoom:</label>
-                    <input type="range" id="camera-zoom" min="10" max="120" value="60">
-                    <span id="camera-zoom-value">60°</span>
+                    <label>Kierunek (°):</label>
+                    <input type="range" id="camera-heading" min="0" max="360" value="0">
+                    <span id="camera-heading-value">0°</span>
                 </div>
                 <div class="control-group">
-                    <label>Pochylenie:</label>
-                    <input type="range" id="camera-tilt" min="-90" max="0" value="-15">
-                    <span id="camera-tilt-value">-15°</span>
+                    <label>Pochylenie (°):</label>
+                    <input type="range" id="camera-pitch" min="-90" max="10" value="-15">
+                    <span id="camera-pitch-value">-15°</span>
                 </div>
-            </div>
-
-            <div class="panel-section">
-                <h3>Widoczność</h3>
                 <div class="control-group">
-                    <label>Zakres (km):</label>
-                    <input type="range" id="visibility-range" min="1" max="20" value="10">
-                    <span id="visibility-range-value">10</span>
+                    <label>Pole widzenia (°):</label>
+                    <input type="range" id="camera-fov" min="20" max="120" value="60">
+                    <span id="camera-fov-value">60°</span>
                 </div>
+                <button id="reset-camera-btn">Resetuj kamerę</button>
             </div>
 
+            <!-- Custom Overlay -->
             <div class="panel-section">
-                <h3>Lotnisko</h3>
+                <h3>Własny layout</h3>
+                <p class="hint">Dodaj własne obiekty lotniskowe gdy dane satelitarne są nieaktualne</p>
                 <button id="load-geojson-btn">Wczytaj GeoJSON</button>
                 <input type="file" id="geojson-input" accept=".json,.geojson" style="display:none">
-                <button id="load-demo-btn">Wczytaj demo</button>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="show-overlay" checked>
+                        Pokaż overlay
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label>Przezroczystość:</label>
+                    <input type="range" id="overlay-opacity" min="0" max="100" value="70">
+                    <span id="overlay-opacity-value">70%</span>
+                </div>
+                <div class="sub-section">
+                    <h4>Dodaj ręcznie:</h4>
+                    <button id="add-runway-btn">+ Pas startowy</button>
+                    <button id="add-taxiway-btn">+ Droga kołowania</button>
+                    <button id="add-apron-btn">+ Apron</button>
+                </div>
+                <button id="clear-overlay-btn" class="danger-btn">Wyczyść overlay</button>
             </div>
 
+            <!-- Aircraft -->
             <div class="panel-section">
                 <h3>Samoloty</h3>
-                <button id="add-aircraft-btn">Dodaj samolot</button>
+                <button id="add-aircraft-btn">+ Dodaj samolot</button>
                 <div id="aircraft-list"></div>
             </div>
 
+            <!-- Position Info -->
             <div class="panel-section">
-                <h3>Pozycja</h3>
+                <h3>Pozycja wieży</h3>
                 <div id="position-info">
                     <div>Lat: <span id="pos-lat">52.1657</span></div>
                     <div>Lon: <span id="pos-lon">20.9671</span></div>
+                    <div>Alt: <span id="pos-alt">110</span> m</div>
                     <div>Kierunek: <span id="pos-heading">0°</span></div>
+                </div>
+            </div>
+
+            <!-- View Options -->
+            <div class="panel-section">
+                <h3>Widok</h3>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="show-osm-buildings" checked>
+                        Budynki 3D (OSM)
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="show-terrain" checked>
+                        Teren 3D
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="show-atmosphere" checked>
+                        Atmosfera
+                    </label>
                 </div>
             </div>
         </div>
 
-        <!-- Info overlay -->
-        <div id="info-overlay">
-            <div id="compass">
+        <!-- Compass -->
+        <div id="compass">
+            <div id="compass-ring">
                 <div id="compass-arrow">N</div>
             </div>
-            <div id="coords-display"></div>
         </div>
 
-        <!-- Aircraft tooltip -->
-        <div id="aircraft-tooltip" class="hidden"></div>
+        <!-- Instructions -->
+        <div id="instructions">
+            <kbd>LPM + przeciągnij</kbd> obrót kamery &nbsp;
+            <kbd>Scroll</kbd> zmiana pochylenia &nbsp;
+            <kbd>R</kbd> reset widoku
+        </div>
+
+        <!-- Aircraft Edit Modal -->
+        <div id="aircraft-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Dodaj/Edytuj samolot</h3>
+                <div class="form-group">
+                    <label>Callsign:</label>
+                    <input type="text" id="ac-callsign" placeholder="LOT123">
+                </div>
+                <div class="form-group">
+                    <label>Typ:</label>
+                    <select id="ac-type">
+                        <option value="A320">Airbus A320</option>
+                        <option value="B738">Boeing 737-800</option>
+                        <option value="B77W">Boeing 777-300ER</option>
+                        <option value="A388">Airbus A380</option>
+                        <option value="E190">Embraer E190</option>
+                        <option value="C172">Cessna 172</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Pozycja (Lat, Lon):</label>
+                    <div class="coords-input">
+                        <input type="number" id="ac-lat" step="0.0001">
+                        <input type="number" id="ac-lon" step="0.0001">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Wysokość (m AGL):</label>
+                    <input type="number" id="ac-alt" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Kierunek (°):</label>
+                    <input type="number" id="ac-heading" value="0" min="0" max="360">
+                </div>
+                <div class="modal-buttons">
+                    <button id="ac-save-btn">Zapisz</button>
+                    <button id="ac-cancel-btn" class="secondary-btn">Anuluj</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Runway Edit Modal -->
+        <div id="runway-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Dodaj pas startowy</h3>
+                <div class="form-group">
+                    <label>Oznaczenie:</label>
+                    <input type="text" id="rwy-name" placeholder="09/27">
+                </div>
+                <div class="form-group">
+                    <label>Początek (Lat, Lon):</label>
+                    <div class="coords-input">
+                        <input type="number" id="rwy-start-lat" step="0.0001">
+                        <input type="number" id="rwy-start-lon" step="0.0001">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Koniec (Lat, Lon):</label>
+                    <div class="coords-input">
+                        <input type="number" id="rwy-end-lat" step="0.0001">
+                        <input type="number" id="rwy-end-lon" step="0.0001">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Szerokość (m):</label>
+                    <input type="number" id="rwy-width" value="45" min="10" max="80">
+                </div>
+                <div class="modal-buttons">
+                    <button id="rwy-save-btn">Dodaj</button>
+                    <button id="rwy-cancel-btn" class="secondary-btn">Anuluj</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-    <!-- Application modules -->
+    <!-- Application Scripts -->
+    <script src="src/js/config.js"></script>
     <script src="src/js/utils/coordinates.js"></script>
-    <script src="src/js/utils/geojsonParser.js"></script>
-    <script src="src/js/objects/ground.js"></script>
-    <script src="src/js/objects/runway.js"></script>
-    <script src="src/js/objects/taxiway.js"></script>
-    <script src="src/js/objects/building.js"></script>
-    <script src="src/js/objects/aircraft.js"></script>
-    <script src="src/js/objects/tower.js"></script>
-    <script src="src/js/controls/towerCamera.js"></script>
-    <script src="src/js/core/scene.js"></script>
-    <script src="src/js/core/app.js"></script>
+    <script src="src/js/utils/geojsonLoader.js"></script>
+    <script src="src/js/core/towerCamera.js"></script>
+    <script src="src/js/core/airportOverlay.js"></script>
+    <script src="src/js/core/aircraftManager.js"></script>
+    <script src="src/js/ui/controlPanel.js"></script>
+    <script src="src/js/ui/modals.js"></script>
+    <script src="src/js/app.js"></script>
 </body>
 </html>

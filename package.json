@@ -1,7 +1,7 @@
 {
   "name": "web-tower-view",
   "version": "1.0.0",
-  "description": "3D Airport Tower View - lightweight web-based airport visualization",
+  "description": "3D Airport Tower View - lightweight web-based airport visualization using CesiumJS",
   "main": "index.html",
   "scripts": {
     "dev": "npx serve .",
@@ -10,12 +10,17 @@
   "keywords": [
     "airport",
     "tower",
+    "atc",
     "3d",
     "visualization",
-    "atc",
-    "threejs"
+    "cesium",
+    "geojson",
+    "aviation"
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {}
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
 }
