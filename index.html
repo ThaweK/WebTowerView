@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebTowerView - Airport 3D Tower View</title>
+    <link rel="stylesheet" href="src/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 3D Canvas Container -->
+        <div id="canvas-container"></div>
+
+        <!-- Control Panel -->
+        <div id="control-panel">
+            <h2>🗼 WebTowerView</h2>
+
+            <div class="panel-section">
+                <h3>Wieża</h3>
+                <div class="control-group">
+                    <label>Wysokość wieży (m):</label>
+                    <input type="range" id="tower-height" min="10" max="100" value="40">
+                    <span id="tower-height-value">40</span>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Kamera</h3>
+                <div class="control-group">
+                    <label>Zoom:</label>
+                    <input type="range" id="camera-zoom" min="10" max="120" value="60">
+                    <span id="camera-zoom-value">60°</span>
+                </div>
+                <div class="control-group">
+                    <label>Pochylenie:</label>
+                    <input type="range" id="camera-tilt" min="-90" max="0" value="-15">
+                    <span id="camera-tilt-value">-15°</span>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Widoczność</h3>
+                <div class="control-group">
+                    <label>Zakres (km):</label>
+                    <input type="range" id="visibility-range" min="1" max="20" value="10">
+                    <span id="visibility-range-value">10</span>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Lotnisko</h3>
+                <button id="load-geojson-btn">Wczytaj GeoJSON</button>
+                <input type="file" id="geojson-input" accept=".json,.geojson" style="display:none">
+                <button id="load-demo-btn">Wczytaj demo</button>
+            </div>
+
+            <div class="panel-section">
+                <h3>Samoloty</h3>
+                <button id="add-aircraft-btn">Dodaj samolot</button>
+                <div id="aircraft-list"></div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Pozycja</h3>
+                <div id="position-info">
+                    <div>Lat: <span id="pos-lat">52.1657</span></div>
+                    <div>Lon: <span id="pos-lon">20.9671</span></div>
+                    <div>Kierunek: <span id="pos-heading">0°</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info overlay -->
+        <div id="info-overlay">
+            <div id="compass">
+                <div id="compass-arrow">N</div>
+            </div>
+            <div id="coords-display"></div>
+        </div>
+
+        <!-- Aircraft tooltip -->
+        <div id="aircraft-tooltip" class="hidden"></div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Application modules -->
+    <script src="src/js/utils/coordinates.js"></script>
+    <script src="src/js/utils/geojsonParser.js"></script>
+    <script src="src/js/objects/ground.js"></script>
+    <script src="src/js/objects/runway.js"></script>
+    <script src="src/js/objects/taxiway.js"></script>
+    <script src="src/js/objects/building.js"></script>
+    <script src="src/js/objects/aircraft.js"></script>
+    <script src="src/js/objects/tower.js"></script>
+    <script src="src/js/controls/towerCamera.js"></script>
+    <script src="src/js/core/scene.js"></script>
+    <script src="src/js/core/app.js"></script>
+</body>
+</html>

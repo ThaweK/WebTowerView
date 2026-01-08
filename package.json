@@ -1,0 +1,21 @@
+{
+  "name": "web-tower-view",
+  "version": "1.0.0",
+  "description": "3D Airport Tower View - lightweight web-based airport visualization",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve .",
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "airport",
+    "tower",
+    "3d",
+    "visualization",
+    "atc",
+    "threejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}
