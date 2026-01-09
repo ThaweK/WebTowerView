@@ -25,12 +25,20 @@ class TowerCamera {
         this.lastX = 0;
         this.lastY = 0;
 
+        // WASD movement mode
+        this.walkModeEnabled = false;
+        this.moveSpeed = 0.0001; // degrees per frame
+        this.keysPressed = new Set();
+        this.moveInterval = null;
+
         // Bind methods
         this.onPointerDown = this.onPointerDown.bind(this);
         this.onPointerUp = this.onPointerUp.bind(this);
         this.onPointerMove = this.onPointerMove.bind(this);
         this.onWheel = this.onWheel.bind(this);
         this.onKeyDown = this.onKeyDown.bind(this);
+        this.onKeyUp = this.onKeyUp.bind(this);
+        this.processMovement = this.processMovement.bind(this);
 
         this.setupControls();
         this.updateCamera();
@@ -149,6 +157,7 @@ class TowerCamera {
 
         // Keyboard
         document.addEventListener('keydown', this.onKeyDown);
+        document.addEventListener('keyup', this.onKeyUp);
 
         // Prevent context menu on long press
         canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -247,6 +256,16 @@ class TowerCamera {
 
     onKeyDown(event) {
         const step = 5;
+        const key = event.key.toLowerCase();
+
+        // WASD movement
+        if (this.walkModeEnabled && ['w', 'a', 's', 'd', 'q', 'e'].includes(key)) {
+            this.keysPressed.add(key);
+            if (!this.moveInterval) {
+                this.moveInterval = setInterval(this.processMovement, 16); // ~60 FPS
+            }
+            return;
+        }
 
         switch (event.key) {
             case 'ArrowLeft':
@@ -270,6 +289,77 @@ class TowerCamera {
                 this.reset();
                 break;
         }
+    }
+
+    onKeyUp(event) {
+        const key = event.key.toLowerCase();
+        this.keysPressed.delete(key);
+
+        if (this.keysPressed.size === 0 && this.moveInterval) {
+            clearInterval(this.moveInterval);
+            this.moveInterval = null;
+        }
+    }
+
+    /**
+     * Process WASD movement
+     */
+    processMovement() {
+        if (!this.walkModeEnabled || this.keysPressed.size === 0) return;
+
+        const headingRad = Cesium.Math.toRadians(this.heading);
+        let deltaLat = 0;
+        let deltaLon = 0;
+        let deltaHeight = 0;
+
+        // Forward/backward (W/S) - move in camera direction
+        if (this.keysPressed.has('w')) {
+            deltaLat += Math.cos(headingRad) * this.moveSpeed;
+            deltaLon += Math.sin(headingRad) * this.moveSpeed;
+        }
+        if (this.keysPressed.has('s')) {
+            deltaLat -= Math.cos(headingRad) * this.moveSpeed;
+            deltaLon -= Math.sin(headingRad) * this.moveSpeed;
+        }
+
+        // Strafe left/right (A/D)
+        if (this.keysPressed.has('a')) {
+            deltaLat += Math.cos(headingRad - Math.PI / 2) * this.moveSpeed;
+            deltaLon += Math.sin(headingRad - Math.PI / 2) * this.moveSpeed;
+        }
+        if (this.keysPressed.has('d')) {
+            deltaLat += Math.cos(headingRad + Math.PI / 2) * this.moveSpeed;
+            deltaLon += Math.sin(headingRad + Math.PI / 2) * this.moveSpeed;
+        }
+
+        // Up/down (Q/E)
+        if (this.keysPressed.has('q')) {
+            deltaHeight -= 2;
+        }
+        if (this.keysPressed.has('e')) {
+            deltaHeight += 2;
+        }
+
+        // Apply movement
+        this.towerLat += deltaLat;
+        this.towerLon += deltaLon;
+        this.towerHeight = Math.max(Config.tower.minHeight,
+            Math.min(Config.tower.maxHeight, this.towerHeight + deltaHeight));
+
+        this.updateCamera();
+    }
+
+    /**
+     * Enable/disable walk mode
+     */
+    setWalkMode(enabled) {
+        this.walkModeEnabled = enabled;
+        if (!enabled && this.moveInterval) {
+            clearInterval(this.moveInterval);
+            this.moveInterval = null;
+            this.keysPressed.clear();
+        }
+        console.log('Walk mode:', enabled ? 'ON' : 'OFF');
     }
 
     onUpdate() {

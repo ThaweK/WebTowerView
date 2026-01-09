@@ -27,6 +27,81 @@ class WeatherEffects {
         // Reference position for clouds
         this.centerLat = 0;
         this.centerLon = 0;
+
+        // Pre-generate cloud textures
+        this.cloudTextures = this.generateCloudTextures();
+    }
+
+    /**
+     * Generate procedural cloud textures
+     */
+    generateCloudTextures() {
+        const textures = [];
+        const sizes = [256, 384, 512];
+
+        for (let i = 0; i < 5; i++) {
+            const size = sizes[i % sizes.length];
+            textures.push(this.createCloudTexture(size, i));
+        }
+
+        return textures;
+    }
+
+    /**
+     * Create a single cloud texture using Perlin-like noise
+     */
+    createCloudTexture(size, seed) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        // Fill with transparent
+        ctx.clearRect(0, 0, size, size);
+
+        // Use radial gradient with noise-like effect
+        const centerX = size / 2;
+        const centerY = size / 2;
+        const maxRadius = size / 2;
+
+        // Create multiple overlapping circles with varying opacity
+        const numCircles = 15 + seed * 3;
+
+        for (let i = 0; i < numCircles; i++) {
+            // Pseudo-random positions within cloud area
+            const angle = (i / numCircles) * Math.PI * 2 + seed;
+            const distance = Math.random() * maxRadius * 0.5;
+            const cx = centerX + Math.cos(angle) * distance + (Math.random() - 0.5) * 40;
+            const cy = centerY + Math.sin(angle) * distance + (Math.random() - 0.5) * 40;
+            const radius = maxRadius * (0.3 + Math.random() * 0.4);
+
+            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+            gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.3)');
+            gradient.addColorStop(0.7, 'rgba(240, 240, 245, 0.15)');
+            gradient.addColorStop(1, 'rgba(230, 230, 240, 0)');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Add central density
+        const mainGradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, maxRadius * 0.7
+        );
+        mainGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+        mainGradient.addColorStop(0.5, 'rgba(250, 250, 255, 0.2)');
+        mainGradient.addColorStop(1, 'rgba(245, 245, 250, 0)');
+
+        ctx.fillStyle = mainGradient;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, maxRadius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        return canvas.toDataURL();
     }
 
     /**
@@ -159,7 +234,7 @@ class WeatherEffects {
     }
 
     /**
-     * Create a cloud layer at specified altitude
+     * Create a cloud layer at specified altitude using billboards
      */
     createCloudLayer(coverage, baseFeet) {
         // Convert feet to meters
@@ -167,16 +242,16 @@ class WeatherEffects {
 
         // Coverage determines opacity and spread
         const coverageSettings = {
-            'FEW': { opacity: 0.2, count: 8, spread: 3000 },
-            'SCT': { opacity: 0.35, count: 15, spread: 4000 },
-            'BKN': { opacity: 0.5, count: 25, spread: 5000 },
-            'OVC': { opacity: 0.7, count: 40, spread: 6000 },
-            'VV': { opacity: 0.85, count: 50, spread: 4000 }  // Vertical visibility (fog/mist)
+            'FEW': { opacity: 0.4, count: 12, spread: 4000, size: 400 },
+            'SCT': { opacity: 0.5, count: 25, spread: 5000, size: 500 },
+            'BKN': { opacity: 0.65, count: 40, spread: 6000, size: 600 },
+            'OVC': { opacity: 0.8, count: 60, spread: 7000, size: 700 },
+            'VV': { opacity: 0.9, count: 80, spread: 5000, size: 500 }  // Vertical visibility (fog/mist)
         };
 
         const settings = coverageSettings[coverage] || coverageSettings['SCT'];
 
-        // Create cloud patches around the center position
+        // Create cloud billboards around the center position
         for (let i = 0; i < settings.count; i++) {
             // Random position within spread radius
             const angle = Math.random() * Math.PI * 2;
@@ -187,20 +262,33 @@ class WeatherEffects {
             const cloudLat = this.centerLat + offsetLat;
             const cloudLon = this.centerLon + offsetLon;
 
-            // Random altitude variation within layer (±50m)
-            const altitude = baseMeters + (Math.random() - 0.5) * 100;
+            // Random altitude variation within layer (±100m)
+            const altitude = baseMeters + (Math.random() - 0.5) * 200;
 
-            // Random cloud size
-            const size = 200 + Math.random() * 400;
-            const height = 30 + Math.random() * 70;
+            // Random cloud size (in meters, will be converted to pixels)
+            const cloudSize = settings.size * (0.7 + Math.random() * 0.6);
 
-            // Create cloud entity as semi-transparent ellipsoid
+            // Random texture
+            const textureIndex = Math.floor(Math.random() * this.cloudTextures.length);
+
+            // Random rotation for variety
+            const rotation = Math.random() * Math.PI * 2;
+
+            // Opacity variation
+            const opacity = settings.opacity * (0.6 + Math.random() * 0.4);
+
+            // Create cloud billboard
             const entity = this.cloudDataSource.entities.add({
                 position: Cesium.Cartesian3.fromDegrees(cloudLon, cloudLat, altitude),
-                ellipsoid: {
-                    radii: new Cesium.Cartesian3(size, size, height),
-                    material: Cesium.Color.WHITE.withAlpha(settings.opacity * (0.5 + Math.random() * 0.5)),
-                    outline: false
+                billboard: {
+                    image: this.cloudTextures[textureIndex],
+                    width: cloudSize,
+                    height: cloudSize * (0.5 + Math.random() * 0.3),
+                    rotation: rotation,
+                    color: Cesium.Color.WHITE.withAlpha(opacity),
+                    heightReference: Cesium.HeightReference.NONE,
+                    disableDepthTestDistance: 50000, // Visible through terrain from distance
+                    sizeInMeters: true
                 }
             });
 

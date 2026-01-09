@@ -52,6 +52,12 @@
             <div class="panel-section">
                 <h3>Kamera</h3>
                 <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="walk-mode-enabled">
+                        Tryb spaceru (WASD)
+                    </label>
+                </div>
+                <div class="control-group">
                     <label>Kierunek (°):</label>
                     <input type="range" id="camera-heading" min="0" max="360" value="0">
                     <span id="camera-heading-value">0°</span>
@@ -173,9 +179,11 @@
 
         <!-- Instructions -->
         <div id="instructions">
-            <kbd>LPM + przeciągnij</kbd> obrót kamery &nbsp;
+            <kbd>LPM + przeciągnij</kbd> obrót &nbsp;
             <kbd>Scroll</kbd> zoom &nbsp;
-            <kbd>R</kbd> reset widoku
+            <kbd>WASD</kbd> ruch (po włączeniu) &nbsp;
+            <kbd>Q/E</kbd> góra/dół &nbsp;
+            <kbd>R</kbd> reset
         </div>
 
         <!-- Aircraft Edit Modal -->

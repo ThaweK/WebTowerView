@@ -11,6 +11,56 @@ class AircraftManager {
         viewer.dataSources.add(this.dataSource);
 
         this.nextId = 1;
+
+        // Pre-generate aircraft icon
+        this.aircraftIcon = this.createAircraftIcon();
+    }
+
+    /**
+     * Create aircraft icon as data URL
+     */
+    createAircraftIcon() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        // Draw aircraft shape (top-down view)
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 2;
+
+        // Fuselage
+        ctx.beginPath();
+        ctx.ellipse(32, 32, 6, 24, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Wings
+        ctx.beginPath();
+        ctx.moveTo(32, 24);
+        ctx.lineTo(8, 36);
+        ctx.lineTo(8, 40);
+        ctx.lineTo(32, 34);
+        ctx.lineTo(56, 40);
+        ctx.lineTo(56, 36);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Tail
+        ctx.beginPath();
+        ctx.moveTo(32, 50);
+        ctx.lineTo(22, 58);
+        ctx.lineTo(22, 60);
+        ctx.lineTo(32, 54);
+        ctx.lineTo(42, 60);
+        ctx.lineTo(42, 58);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        return canvas.toDataURL();
     }
 
     /**
@@ -46,26 +96,25 @@ class AircraftManager {
         const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
         const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
 
-        // Create a simple aircraft representation using primitives
+        // Create aircraft representation using billboard (always faces camera, consistent at all angles)
         const entity = this.dataSource.entities.add({
             id: id,
             name: callsign,
             position: position,
-            orientation: orientation,
 
-            // Aircraft body (box approximation)
-            box: {
-                dimensions: new Cesium.Cartesian3(
-                    typeInfo.wingspan,
-                    typeInfo.length,
-                    typeInfo.length * 0.15
-                ),
-                material: Cesium.Color.WHITE.withAlpha(0.9),
-                outline: true,
-                outlineColor: Cesium.Color.GRAY
+            // Aircraft icon billboard - rotated by heading
+            billboard: {
+                image: this.aircraftIcon,
+                width: 32,
+                height: 32,
+                rotation: Cesium.Math.toRadians(-heading), // Negative for correct rotation
+                alignedAxis: Cesium.Cartesian3.UNIT_Z,
+                heightReference: Cesium.HeightReference.NONE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                color: Cesium.Color.WHITE
             },
 
-            // Label - use NONE for heightReference to match box position
+            // Label
             label: {
                 text: callsign,
                 font: '14px monospace',
@@ -129,8 +178,6 @@ class AircraftManager {
      * Setup smooth position interpolation using CallbackProperty
      */
     setupSmoothPosition(aircraft) {
-        const self = this;
-
         // Position callback - interpolates toward target
         aircraft.entity.position = new Cesium.CallbackProperty(() => {
             return Cesium.Cartesian3.fromDegrees(
@@ -140,17 +187,12 @@ class AircraftManager {
             );
         }, false);
 
-        // Orientation callback - interpolates toward target heading
-        aircraft.entity.orientation = new Cesium.CallbackProperty(() => {
-            const position = Cesium.Cartesian3.fromDegrees(
-                aircraft.lon,
-                aircraft.lat,
-                aircraft.altitude
-            );
-            const headingRad = Cesium.Math.toRadians(aircraft.heading);
-            const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
-            return Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
-        }, false);
+        // Billboard rotation callback - interpolates heading
+        if (aircraft.entity.billboard) {
+            aircraft.entity.billboard.rotation = new Cesium.CallbackProperty(() => {
+                return Cesium.Math.toRadians(-aircraft.heading);
+            }, false);
+        }
     }
 
     /**
@@ -204,10 +246,10 @@ class AircraftManager {
             );
             aircraft.entity.position = position;
 
-            // Update orientation
-            const headingRad = Cesium.Math.toRadians(aircraft.heading);
-            const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
-            aircraft.entity.orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+            // Update billboard rotation for heading
+            if (aircraft.entity.billboard) {
+                aircraft.entity.billboard.rotation = Cesium.Math.toRadians(-aircraft.heading);
+            }
 
             // Update properties
             aircraft.entity.properties.heading = aircraft.heading;

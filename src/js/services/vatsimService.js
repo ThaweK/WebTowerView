@@ -23,7 +23,7 @@ class VatsimService {
         this.renderInterval = null;
 
         // Settings
-        this.fetchIntervalMs = 5000; // Fetch every 5 seconds for fresher data
+        this.fetchIntervalMs = 2000; // Fetch every 2 seconds for real-time data
         this.renderIntervalMs = 16;   // ~60 FPS for smoother movement
 
         // Constants

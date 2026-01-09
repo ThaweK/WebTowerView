@@ -42,6 +42,11 @@ const ControlPanel = {
             this.app.towerCamera.setFov(value);
         });
 
+        // Walk mode (WASD)
+        document.getElementById('walk-mode-enabled')?.addEventListener('change', (e) => {
+            this.app.towerCamera.setWalkMode(e.target.checked);
+        });
+
         // Reset camera
         document.getElementById('reset-camera-btn')?.addEventListener('click', () => {
             this.app.towerCamera.reset();
