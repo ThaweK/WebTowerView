@@ -23,21 +23,7 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create imagery provider first
-        let imageryProvider;
-        try {
-            imageryProvider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
-                'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
-            );
-            console.log('ArcGIS World Imagery ready');
-        } catch (e) {
-            console.warn('ArcGIS failed, using fallback');
-            imageryProvider = new Cesium.OpenStreetMapImageryProvider({
-                url: 'https://tile.openstreetmap.org/'
-            });
-        }
-
-        // Create Cesium viewer with imagery
+        // Create Cesium viewer with default settings
         this.viewer = new Cesium.Viewer('cesiumContainer', {
             animation: false,
             timeline: false,
@@ -48,24 +34,23 @@ class WebTowerViewApp {
             navigationHelpButton: false,
             sceneModePicker: false,
             selectionIndicator: false,
-            infoBox: false,
-            requestRenderMode: false,
-            maximumRenderTimeChange: Infinity,
-            imageryProvider: imageryProvider
+            infoBox: false
         });
 
-        console.log('Viewer created with imagery');
+        console.log('Viewer created');
 
-        // Ensure globe is visible and configured
+        // Globe settings
         const globe = this.viewer.scene.globe;
         globe.show = true;
         globe.enableLighting = false;
         globe.depthTestAgainstTerrain = false;
-        globe.baseColor = Cesium.Color.fromCssColorString('#2d5a27');
 
-        // Show atmosphere
+        // Atmosphere
         this.viewer.scene.skyAtmosphere.show = true;
         this.viewer.scene.fog.enabled = false;
+
+        console.log('Globe show:', globe.show);
+        console.log('Imagery layers count:', this.viewer.imageryLayers.length);
 
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
