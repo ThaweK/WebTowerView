@@ -11,7 +11,7 @@
 const Config = {
     // Cesium Ion access token (get free at https://cesium.com/ion/tokens)
     // Leave empty to use basic features without Ion
-    CESIUM_ION_TOKEN: '',
+    CESIUM_ION_TOKEN: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MzYyMTA3NC1lYmRiLTQ5ZDctYWFmYS1kZGVjOWZkYjVkZDAiLCJpZCI6Mzc2Njg0LCJpYXQiOjE3Njc5NTE3OTV9.IQ64Cn28jMxBXkPK1j1ttFYQGveRmHQZ0AiLQz3zhhY',
 
     // Default airport location (Warsaw Chopin - EPWA)
     defaultAirport: {
