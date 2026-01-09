@@ -26,8 +26,16 @@ class AircraftManager {
             lon,
             altitude = 0,  // AGL
             heading = 0,
-            speed = 0  // knots, for future animation
+            speed = 0,  // knots, for future animation
+            isVatsim = false
         } = options;
+
+        // Check if aircraft with this callsign exists (for VATSIM)
+        const existing = this.findByCallsign(callsign);
+        if (existing) {
+            this.updateAircraft(existing.id, { lat, lon, altitude, heading, speed });
+            return existing.id;
+        }
 
         const id = `aircraft_${this.nextId++}`;
         const typeInfo = Config.aircraft.types[type] || Config.aircraft.types['A320'];
@@ -164,6 +172,43 @@ class AircraftManager {
      */
     getAircraft(id) {
         return this.aircraft.get(id) || null;
+    }
+
+    /**
+     * Find aircraft by callsign
+     * @param {string} callsign
+     * @returns {Object|null}
+     */
+    findByCallsign(callsign) {
+        for (const aircraft of this.aircraft.values()) {
+            if (aircraft.callsign === callsign) {
+                return aircraft;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Update aircraft position by callsign (for VATSIM)
+     * @param {string} callsign
+     * @param {Object} updates
+     */
+    updateAircraftPosition(callsign, updates) {
+        const aircraft = this.findByCallsign(callsign);
+        if (aircraft) {
+            this.updateAircraft(aircraft.id, updates);
+        }
+    }
+
+    /**
+     * Remove aircraft by callsign
+     * @param {string} callsign
+     */
+    removeByCallsign(callsign) {
+        const aircraft = this.findByCallsign(callsign);
+        if (aircraft) {
+            this.removeAircraft(aircraft.id);
+        }
     }
 
     /**

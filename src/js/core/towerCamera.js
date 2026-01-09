@@ -223,11 +223,11 @@ class TowerCamera {
 
             if (this.lastTouchDistance > 0) {
                 const delta = distance - this.lastTouchDistance;
-                // Pinch: change pitch
-                this.pitch += delta * 0.1;
-                this.pitch = Math.max(Config.camera.minPitch,
-                    Math.min(Config.camera.maxPitch, this.pitch));
-                this.updateCamera();
+                // Pinch: change FOV (zoom)
+                this.fov -= delta * 0.2;
+                this.fov = Math.max(20, Math.min(120, this.fov));
+                this.camera.frustum.fov = Cesium.Math.toRadians(this.fov);
+                this.onUpdate();
             }
 
             this.lastTouchDistance = distance;
@@ -237,11 +237,12 @@ class TowerCamera {
     onWheel(event) {
         event.preventDefault();
 
-        const delta = event.deltaY > 0 ? -3 : 3;
-        this.pitch = Math.max(Config.camera.minPitch,
-            Math.min(Config.camera.maxPitch, this.pitch + delta));
-
-        this.updateCamera();
+        // Scroll: change FOV (zoom)
+        const delta = event.deltaY > 0 ? 2 : -2;
+        this.fov += delta;
+        this.fov = Math.max(20, Math.min(120, this.fov));
+        this.camera.frustum.fov = Cesium.Math.toRadians(this.fov);
+        this.onUpdate();
     }
 
     onKeyDown(event) {

@@ -436,3 +436,65 @@ button.danger-btn:hover {
     margin-top: 15px;
     font-size: 14px;
 }
+
+/* Weather display */
+#weather-info {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.weather-loading {
+    color: #888;
+    text-align: center;
+    font-style: italic;
+}
+
+.weather-category {
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.weather-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.weather-item .label {
+    color: #888;
+}
+
+.weather-item .value {
+    color: #fff;
+    font-family: 'Consolas', monospace;
+}
+
+.weather-raw {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #333;
+    font-family: 'Consolas', monospace;
+    font-size: 9px;
+    color: #666;
+    word-break: break-all;
+}
+
+/* VATSIM status */
+#vatsim-status {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: center;
+    margin-top: 8px;
+}
+
+#vatsim-count {
+    color: #00ff88;
+    font-weight: bold;
+    font-size: 14px;
+}

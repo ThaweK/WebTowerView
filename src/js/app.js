@@ -10,6 +10,9 @@ class WebTowerViewApp {
         this.airportOverlay = null;
         this.aircraftManager = null;
         this.osmBuildings = null;
+        this.metarService = null;
+        this.vatsimService = null;
+        this.currentIcao = Config.defaultAirport.icao;
     }
 
     /**
@@ -61,30 +64,6 @@ class WebTowerViewApp {
         this.viewer.scene.skyAtmosphere.show = true;
         this.viewer.scene.fog.enabled = false;
 
-        console.log('Globe show:', globe.show);
-        console.log('Imagery layers count:', this.viewer.imageryLayers.length);
-
-        // Debug: log imagery layer details
-        for (let i = 0; i < this.viewer.imageryLayers.length; i++) {
-            const layer = this.viewer.imageryLayers.get(i);
-            const provider = layer.imageryProvider;
-            if (provider) {
-                console.log(`Layer ${i}:`, provider.constructor?.name || 'unknown', 'ready:', provider.ready);
-            } else {
-                console.log(`Layer ${i}: provider not yet available`);
-            }
-        }
-
-        // Debug: Check camera position after 2 seconds
-        setTimeout(() => {
-            const pos = this.viewer.camera.positionCartographic;
-            console.log('Camera position:', {
-                lon: Cesium.Math.toDegrees(pos.longitude).toFixed(4),
-                lat: Cesium.Math.toDegrees(pos.latitude).toFixed(4),
-                height: pos.height.toFixed(1)
-            });
-        }, 2000);
-
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
             try {
@@ -109,9 +88,19 @@ class WebTowerViewApp {
         this.airportOverlay = new AirportOverlay(this.viewer);
         this.aircraftManager = new AircraftManager(this.viewer);
 
+        // Initialize services
+        this.metarService = new MetarService();
+        this.vatsimService = new VatsimService(this.aircraftManager, this.viewer);
+
+        // Setup METAR listener
+        this.metarService.addListener((metar) => this.updateWeatherDisplay(metar));
+
         // Initialize UI
         ControlPanel.init(this);
         Modals.init();
+
+        // Setup VATSIM controls
+        this.setupVatsimControls();
 
         // Set cursor style
         this.viewer.canvas.style.cursor = 'grab';
@@ -119,8 +108,12 @@ class WebTowerViewApp {
         // Go to default airport
         await this.goToLocation(
             Config.defaultAirport.lat,
-            Config.defaultAirport.lon
+            Config.defaultAirport.lon,
+            Config.defaultAirport.icao
         );
+
+        // Start METAR updates
+        this.metarService.startUpdates(this.currentIcao);
 
         console.log('WebTowerView initialized successfully');
         if (!Config.CESIUM_ION_TOKEN) {
@@ -131,7 +124,7 @@ class WebTowerViewApp {
     /**
      * Go to a specific location with automatic terrain height detection
      */
-    async goToLocation(lat, lon) {
+    async goToLocation(lat, lon, icao = null) {
         let terrainHeight = 0;
 
         try {
@@ -150,6 +143,15 @@ class WebTowerViewApp {
         }
 
         terrainHeight = Math.max(0, terrainHeight);
+
+        // Update current ICAO if provided
+        if (icao) {
+            this.currentIcao = icao;
+            this.metarService.startUpdates(icao);
+        }
+
+        // Update VATSIM center
+        this.vatsimService.setCenter(lat, lon);
 
         this.towerCamera.flyTo(lat, lon, terrainHeight, () => {
             document.getElementById('input-lat').value = lat.toFixed(5);
@@ -211,6 +213,91 @@ class WebTowerViewApp {
         a.click();
 
         URL.revokeObjectURL(url);
+    }
+
+    /**
+     * Update weather display from METAR data
+     */
+    updateWeatherDisplay(metar) {
+        const container = document.getElementById('weather-info');
+        if (!container || !metar) return;
+
+        const categoryColors = {
+            'VFR': '#00ff00',
+            'MVFR': '#0088ff',
+            'IFR': '#ff0000',
+            'LIFR': '#ff00ff'
+        };
+
+        const categoryColor = categoryColors[metar.flightCategory] || '#ffffff';
+
+        container.innerHTML = `
+            <div class="weather-category" style="color: ${categoryColor}">
+                ${metar.flightCategory}
+            </div>
+            <div class="weather-item">
+                <span class="label">Wiatr:</span>
+                <span class="value">${this.metarService.formatWind(metar)}</span>
+            </div>
+            <div class="weather-item">
+                <span class="label">Widoczność:</span>
+                <span class="value">${this.metarService.formatVisibility(metar)}</span>
+            </div>
+            <div class="weather-item">
+                <span class="label">Temp:</span>
+                <span class="value">${metar.temp !== null ? metar.temp + '°C' : 'N/A'}</span>
+            </div>
+            ${metar.clouds.length > 0 ? `
+            <div class="weather-item">
+                <span class="label">Chmury:</span>
+                <span class="value">${metar.clouds.map(c => `${c.cover} ${c.base}ft`).join(', ')}</span>
+            </div>
+            ` : ''}
+            ${metar.wxString ? `
+            <div class="weather-item">
+                <span class="label">Zjawiska:</span>
+                <span class="value">${metar.wxString}</span>
+            </div>
+            ` : ''}
+            <div class="weather-raw">${metar.raw}</div>
+        `;
+    }
+
+    /**
+     * Setup VATSIM controls
+     */
+    setupVatsimControls() {
+        const enabledCheckbox = document.getElementById('vatsim-enabled');
+        const radiusSlider = document.getElementById('vatsim-radius');
+        const radiusValue = document.getElementById('vatsim-radius-value');
+        const countSpan = document.getElementById('vatsim-count');
+
+        if (enabledCheckbox) {
+            enabledCheckbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    const state = this.towerCamera.getState();
+                    const radius = parseInt(radiusSlider.value);
+                    this.vatsimService.start(state.lat, state.lon, radius);
+                } else {
+                    this.vatsimService.stop();
+                }
+            });
+        }
+
+        if (radiusSlider) {
+            radiusSlider.addEventListener('input', (e) => {
+                const radius = parseInt(e.target.value);
+                radiusValue.textContent = `${radius} km`;
+                this.vatsimService.radius = radius;
+            });
+        }
+
+        // Update count periodically
+        setInterval(() => {
+            if (countSpan && this.vatsimService) {
+                countSpan.textContent = this.vatsimService.getPilotCount();
+            }
+        }, 1000);
     }
 }
 
