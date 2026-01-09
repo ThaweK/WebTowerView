@@ -40,16 +40,24 @@ class WebTowerViewApp {
             baseLayer: false  // Don't add default imagery
         });
 
-        // Add Cesium Ion World Imagery (Sentinel-2 / Bing replacement)
-        if (Config.CESIUM_ION_TOKEN) {
+        // Add ArcGIS World Imagery (free satellite imagery)
+        try {
+            const arcGisImagery = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+                'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
+            );
+            this.viewer.imageryLayers.addImageryProvider(arcGisImagery);
+            console.log('ArcGIS World Imagery loaded');
+        } catch (e) {
+            console.warn('Could not load ArcGIS imagery:', e.message);
+            // Fallback to OpenStreetMap
             try {
-                const imageryLayer = Cesium.ImageryLayer.fromProviderAsync(
-                    Cesium.IonImageryProvider.fromAssetId(2) // Cesium World Imagery
-                );
-                this.viewer.imageryLayers.add(imageryLayer);
-                console.log('Cesium World Imagery loaded');
-            } catch (e) {
-                console.warn('Could not load imagery:', e.message);
+                const osmImagery = new Cesium.OpenStreetMapImageryProvider({
+                    url: 'https://tile.openstreetmap.org/'
+                });
+                this.viewer.imageryLayers.addImageryProvider(osmImagery);
+                console.log('OpenStreetMap imagery loaded as fallback');
+            } catch (e2) {
+                console.warn('Could not load OSM imagery:', e2.message);
             }
         }
 
