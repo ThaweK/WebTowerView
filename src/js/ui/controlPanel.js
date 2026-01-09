@@ -64,7 +64,7 @@ const ControlPanel = {
             if (airport) {
                 document.getElementById('input-lat').value = airport.lat;
                 document.getElementById('input-lon').value = airport.lon;
-                this.app.goToLocation(airport.lat, airport.lon, airport.elevation);
+                this.app.goToLocation(airport.lat, airport.lon);
             } else {
                 alert('Lotnisko nie znalezione. Spróbuj: EPWA, KJFK, EGLL...');
             }

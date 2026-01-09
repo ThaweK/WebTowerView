@@ -23,7 +23,7 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create Cesium viewer
+        // Create Cesium viewer with default imagery (Bing Maps if no token, or Ion)
         this.viewer = new Cesium.Viewer('cesiumContainer', {
             // Disable default UI elements for cleaner look
             animation: false,
@@ -39,46 +39,35 @@ class WebTowerViewApp {
 
             // Use high quality rendering
             requestRenderMode: false,
-            maximumRenderTimeChange: Infinity,
-
-            // Imagery - OpenStreetMap
-            baseLayer: Cesium.ImageryLayer.fromProviderAsync(
-                Cesium.TileMapServiceImageryProvider.fromUrl(
-                    Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")
-                )
-            )
+            maximumRenderTimeChange: Infinity
         });
 
-        // Add OpenStreetMap imagery on top
-        try {
-            const osmProvider = new Cesium.OpenStreetMapImageryProvider({
-                url: 'https://tile.openstreetmap.org/'
-            });
-            this.viewer.imageryLayers.addImageryProvider(osmProvider);
-        } catch (e) {
-            console.warn('Could not load OSM imagery:', e.message);
-        }
+        // Make sure globe is visible
+        this.viewer.scene.globe.show = true;
+        this.viewer.scene.skyBox.show = true;
+        this.viewer.scene.sun.show = true;
 
         // Configure scene
         this.viewer.scene.globe.enableLighting = false;
-        this.viewer.scene.globe.depthTestAgainstTerrain = true;
+        this.viewer.scene.globe.depthTestAgainstTerrain = false;
         this.viewer.scene.fog.enabled = true;
-        this.viewer.scene.fog.density = 0.0002;
+        this.viewer.scene.fog.density = 0.0001;
 
         // Add terrain if token is available
         if (Config.CESIUM_ION_TOKEN) {
             try {
-                this.viewer.scene.setTerrain(Cesium.Terrain.fromWorldTerrain());
+                const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
+                this.viewer.terrainProvider = terrain;
+                console.log('Terrain loaded');
             } catch (e) {
                 console.warn('Could not load terrain:', e.message);
             }
-        }
 
-        // Add OSM Buildings if token is available
-        if (Config.CESIUM_ION_TOKEN) {
+            // Add OSM Buildings
             try {
                 this.osmBuildings = await Cesium.createOsmBuildingsAsync();
                 this.viewer.scene.primitives.add(this.osmBuildings);
+                console.log('OSM Buildings loaded');
             } catch (e) {
                 console.warn('Could not load OSM Buildings:', e.message);
             }
@@ -96,25 +85,48 @@ class WebTowerViewApp {
         // Set cursor style
         this.viewer.canvas.style.cursor = 'grab';
 
-        // Go to default airport
-        this.goToLocation(
+        // Go to default airport and sample terrain height
+        await this.goToLocation(
             Config.defaultAirport.lat,
-            Config.defaultAirport.lon,
-            Config.defaultAirport.elevation
+            Config.defaultAirport.lon
         );
 
         console.log('WebTowerView initialized successfully');
-        console.log('Tip: Get a free Cesium Ion token at https://cesium.com/ion/tokens for 3D buildings and terrain');
+        if (!Config.CESIUM_ION_TOKEN) {
+            console.log('Tip: Get a free Cesium Ion token at https://cesium.com/ion/tokens for 3D buildings and terrain');
+        }
     }
 
     /**
-     * Go to a specific location
+     * Go to a specific location with automatic terrain height detection
      * @param {number} lat
      * @param {number} lon
-     * @param {number} elevation
      */
-    goToLocation(lat, lon, elevation = 0) {
-        this.towerCamera.flyTo(lat, lon, elevation, () => {
+    async goToLocation(lat, lon) {
+        // Try to get terrain height at this location
+        let terrainHeight = 0;
+
+        try {
+            const positions = [Cesium.Cartographic.fromDegrees(lon, lat)];
+            const terrain = this.viewer.terrainProvider;
+
+            if (terrain && terrain.ready !== false) {
+                const sampledPositions = await Cesium.sampleTerrainMostDetailed(terrain, positions);
+                if (sampledPositions && sampledPositions[0]) {
+                    terrainHeight = sampledPositions[0].height || 0;
+                    console.log(`Terrain height at location: ${terrainHeight.toFixed(1)}m`);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not sample terrain height:', e.message);
+            // Use config elevation as fallback
+            terrainHeight = Config.defaultAirport.elevation || 0;
+        }
+
+        // Ensure minimum height above terrain
+        terrainHeight = Math.max(0, terrainHeight);
+
+        this.towerCamera.flyTo(lat, lon, terrainHeight, () => {
             // Update input fields
             document.getElementById('input-lat').value = lat.toFixed(5);
             document.getElementById('input-lon').value = lon.toFixed(5);
