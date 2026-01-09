@@ -54,6 +54,8 @@ class WebTowerViewApp {
 
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
+            // Temporarily disable terrain to debug imagery issue
+            /*
             try {
                 const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
                 this.viewer.terrainProvider = terrain;
@@ -61,7 +63,10 @@ class WebTowerViewApp {
             } catch (e) {
                 console.warn('Could not load terrain:', e.message);
             }
+            */
 
+            // Temporarily disable buildings to debug imagery issue
+            /*
             try {
                 this.osmBuildings = await Cesium.createOsmBuildingsAsync();
                 this.viewer.scene.primitives.add(this.osmBuildings);
@@ -69,6 +74,7 @@ class WebTowerViewApp {
             } catch (e) {
                 console.warn('Could not load OSM Buildings:', e.message);
             }
+            */
         }
 
         // Initialize modules
