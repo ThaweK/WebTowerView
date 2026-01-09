@@ -1,6 +1,6 @@
 /**
  * Aircraft Manager - Advanced 3D Aircraft Rendering
- * Creates realistic 3D aircraft models using Cesium primitives
+ * Creates realistic 3D aircraft models using Cesium entities with proper terrain sync
  */
 
 class AircraftManager {
@@ -9,10 +9,6 @@ class AircraftManager {
         this.aircraft = new Map();
         this.dataSource = new Cesium.CustomDataSource('aircraft');
         viewer.dataSources.add(this.dataSource);
-
-        // Primitive collection for 3D aircraft models
-        this.primitiveCollection = new Cesium.PrimitiveCollection();
-        viewer.scene.primitives.add(this.primitiveCollection);
 
         this.nextId = 1;
 
@@ -30,6 +26,23 @@ class AircraftManager {
             'SWA': { fuselage: '#304CB2', tail: '#FFBF27', accent: '#FF0000' },
             'default': { fuselage: '#FFFFFF', tail: '#333333', accent: '#FF6600' }
         };
+
+        // Setup render loop for smooth updates
+        this.setupRenderLoop();
+    }
+
+    /**
+     * Setup render loop for synchronized position updates
+     */
+    setupRenderLoop() {
+        this.viewer.scene.preRender.addEventListener(() => {
+            // Update all VATSIM aircraft positions smoothly
+            for (const aircraft of this.aircraft.values()) {
+                if (aircraft.isVatsim && aircraft.needsUpdate) {
+                    this.updateEntityPositions(aircraft);
+                }
+            }
+        });
     }
 
     /**
@@ -41,13 +54,12 @@ class AircraftManager {
     }
 
     /**
-     * Create 3D aircraft model geometry
+     * Create 3D aircraft model using multiple entities
      */
-    create3DAircraftModel(typeInfo, colors) {
-        const scale = typeInfo.length / 40; // Normalize to A320 size
-        const instances = [];
+    createAircraftEntities(id, typeInfo, colors, lat, lon, altitude, heading) {
+        const entities = [];
 
-        // Aircraft dimensions (scaled)
+        // Aircraft dimensions
         const fuselageLength = typeInfo.length;
         const fuselageRadius = typeInfo.length * 0.08;
         const wingspan = typeInfo.wingspan;
@@ -57,227 +69,244 @@ class AircraftManager {
         const engineRadius = fuselageRadius * 0.4;
         const engineLength = typeInfo.length * 0.12;
 
-        // Fuselage (main body) - elongated cylinder approximation using box
-        instances.push({
-            type: 'fuselage',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-fuselageRadius, -fuselageLength / 2, -fuselageRadius),
-                maximum: new Cesium.Cartesian3(fuselageRadius, fuselageLength / 2, fuselageRadius)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage)
-        });
+        // Position callback for synchronized updates
+        const createPositionCallback = (offsetX, offsetY, offsetZ) => {
+            return new Cesium.CallbackProperty((time, result) => {
+                const aircraft = this.aircraft.get(id);
+                if (!aircraft) return Cesium.Cartesian3.ZERO;
+
+                const basePosition = Cesium.Cartesian3.fromDegrees(
+                    aircraft.lon, aircraft.lat, aircraft.altitude
+                );
+
+                // Apply local offset based on heading
+                // Heading is clockwise from North: 0=N, 90=E, 180=S, 270=W
+                const headingRad = Cesium.Math.toRadians(aircraft.heading);
+                // Rotate offset to ENU coordinates: offsetY=forward (nose), offsetX=right
+                const rotatedX = offsetX * Math.cos(headingRad) + offsetY * Math.sin(headingRad);
+                const rotatedY = -offsetX * Math.sin(headingRad) + offsetY * Math.cos(headingRad);
+
+                const transform = Cesium.Transforms.eastNorthUpToFixedFrame(basePosition);
+                const localOffset = new Cesium.Cartesian3(rotatedX, rotatedY, offsetZ);
+
+                return Cesium.Matrix4.multiplyByPoint(transform, localOffset, result || new Cesium.Cartesian3());
+            }, false);
+        };
+
+        // Orientation callback
+        const createOrientationCallback = () => {
+            return new Cesium.CallbackProperty(() => {
+                const aircraft = this.aircraft.get(id);
+                if (!aircraft) return Cesium.Quaternion.IDENTITY;
+
+                const position = Cesium.Cartesian3.fromDegrees(
+                    aircraft.lon, aircraft.lat, aircraft.altitude
+                );
+                // Cesium HeadingPitchRoll: heading 0 = North, positive = clockwise
+                const headingRad = Cesium.Math.toRadians(aircraft.heading);
+                const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
+                return Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+            }, false);
+        };
+
+        const orientation = createOrientationCallback();
+
+        // Fuselage (main body)
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_fuselage`,
+            position: createPositionCallback(0, 0, 0),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(fuselageRadius * 2, fuselageLength, fuselageRadius * 2),
+                material: Cesium.Color.fromCssColorString(colors.fuselage),
+                outline: true,
+                outlineColor: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.3, new Cesium.Color()),
+                outlineWidth: 1
+            }
+        }));
 
         // Nose cone
-        instances.push({
-            type: 'nose',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-fuselageRadius * 0.7, fuselageLength / 2, -fuselageRadius * 0.7),
-                maximum: new Cesium.Cartesian3(fuselageRadius * 0.7, fuselageLength / 2 + fuselageLength * 0.08, fuselageRadius * 0.7)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.1, new Cesium.Color())
-        });
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_nose`,
+            position: createPositionCallback(0, fuselageLength / 2 + fuselageLength * 0.04, 0),
+            orientation: orientation,
+            ellipsoid: {
+                radii: new Cesium.Cartesian3(fuselageRadius * 0.8, fuselageLength * 0.08, fuselageRadius * 0.8),
+                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.1, new Cesium.Color())
+            }
+        }));
 
-        // Cockpit windows (dark strip)
-        instances.push({
-            type: 'cockpit',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-fuselageRadius * 0.6, fuselageLength * 0.38, fuselageRadius * 0.3),
-                maximum: new Cesium.Cartesian3(fuselageRadius * 0.6, fuselageLength * 0.48, fuselageRadius * 1.01)
-            }),
-            color: Cesium.Color.fromCssColorString('#1a1a2e')
-        });
-
-        // Main wings (left and right)
-        const wingOffsetY = -fuselageLength * 0.05;
+        // Cockpit windows
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_cockpit`,
+            position: createPositionCallback(0, fuselageLength * 0.4, fuselageRadius * 0.7),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(fuselageRadius * 1.2, fuselageLength * 0.1, fuselageRadius * 0.4),
+                material: Cesium.Color.fromCssColorString('#1a1a2e')
+            }
+        }));
 
         // Left wing
-        instances.push({
-            type: 'wing_left',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-wingspan / 2, wingOffsetY - wingChord / 2, -wingThickness / 2),
-                maximum: new Cesium.Cartesian3(-fuselageRadius, wingOffsetY + wingChord / 2, wingThickness / 2)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color())
-        });
+        const wingOffsetY = -fuselageLength * 0.05;
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_wing_left`,
+            position: createPositionCallback(-wingspan / 4 - fuselageRadius / 2, wingOffsetY, 0),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(wingspan / 2 - fuselageRadius, wingChord, wingThickness),
+                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color()),
+                outline: true,
+                outlineColor: Cesium.Color.GRAY
+            }
+        }));
 
         // Right wing
-        instances.push({
-            type: 'wing_right',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(fuselageRadius, wingOffsetY - wingChord / 2, -wingThickness / 2),
-                maximum: new Cesium.Cartesian3(wingspan / 2, wingOffsetY + wingChord / 2, wingThickness / 2)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color())
-        });
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_wing_right`,
+            position: createPositionCallback(wingspan / 4 + fuselageRadius / 2, wingOffsetY, 0),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(wingspan / 2 - fuselageRadius, wingChord, wingThickness),
+                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color()),
+                outline: true,
+                outlineColor: Cesium.Color.GRAY
+            }
+        }));
 
-        // Winglets (if modern aircraft)
-        const wingletHeight = fuselageRadius * 0.8;
-        instances.push({
-            type: 'winglet_left',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-wingspan / 2 - wingThickness, wingOffsetY - wingChord * 0.3, 0),
-                maximum: new Cesium.Cartesian3(-wingspan / 2, wingOffsetY + wingChord * 0.1, wingletHeight)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage)
-        });
+        // Left winglet
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_winglet_left`,
+            position: createPositionCallback(-wingspan / 2, wingOffsetY, fuselageRadius * 0.4),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(wingThickness * 2, wingChord * 0.4, fuselageRadius * 0.8),
+                material: Cesium.Color.fromCssColorString(colors.fuselage)
+            }
+        }));
 
-        instances.push({
-            type: 'winglet_right',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(wingspan / 2, wingOffsetY - wingChord * 0.3, 0),
-                maximum: new Cesium.Cartesian3(wingspan / 2 + wingThickness, wingOffsetY + wingChord * 0.1, wingletHeight)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage)
-        });
+        // Right winglet
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_winglet_right`,
+            position: createPositionCallback(wingspan / 2, wingOffsetY, fuselageRadius * 0.4),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(wingThickness * 2, wingChord * 0.4, fuselageRadius * 0.8),
+                material: Cesium.Color.fromCssColorString(colors.fuselage)
+            }
+        }));
 
         // Vertical stabilizer (tail fin)
-        instances.push({
-            type: 'vertical_stabilizer',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-wingThickness / 2, -fuselageLength / 2 + fuselageLength * 0.05, fuselageRadius * 0.5),
-                maximum: new Cesium.Cartesian3(wingThickness / 2, -fuselageLength / 2 + fuselageLength * 0.2, fuselageRadius + tailHeight)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.tail)
-        });
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_vertical_stab`,
+            position: createPositionCallback(0, -fuselageLength / 2 + fuselageLength * 0.1, fuselageRadius + tailHeight / 2),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(wingThickness, fuselageLength * 0.15, tailHeight),
+                material: Cesium.Color.fromCssColorString(colors.tail),
+                outline: true,
+                outlineColor: Cesium.Color.fromCssColorString(colors.tail).darken(0.2, new Cesium.Color())
+            }
+        }));
 
         // Horizontal stabilizers
         const hstabSpan = wingspan * 0.3;
-        const hstabChord = wingChord * 0.5;
-
-        instances.push({
-            type: 'horizontal_stabilizer',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-hstabSpan / 2, -fuselageLength / 2, fuselageRadius * 0.6),
-                maximum: new Cesium.Cartesian3(hstabSpan / 2, -fuselageLength / 2 + hstabChord, fuselageRadius * 0.7)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color())
-        });
-
-        // Engines (under wings for most jets)
-        const engineOffsetX = wingspan * 0.25;
-        const engineOffsetY = wingOffsetY + wingChord * 0.2;
-        const engineOffsetZ = -fuselageRadius * 0.8;
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_horizontal_stab`,
+            position: createPositionCallback(0, -fuselageLength / 2 + fuselageLength * 0.05, fuselageRadius * 0.7),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(hstabSpan, wingChord * 0.5, wingThickness),
+                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color())
+            }
+        }));
 
         // Left engine
-        instances.push({
-            type: 'engine_left',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-engineOffsetX - engineRadius, engineOffsetY - engineLength / 2, engineOffsetZ - engineRadius),
-                maximum: new Cesium.Cartesian3(-engineOffsetX + engineRadius, engineOffsetY + engineLength / 2, engineOffsetZ + engineRadius)
-            }),
-            color: Cesium.Color.fromCssColorString('#404040')
-        });
+        const engineOffsetX = wingspan * 0.25;
+        const engineOffsetY = wingOffsetY + wingChord * 0.1;
+        const engineOffsetZ = -fuselageRadius * 0.6;
 
-        // Left engine intake (darker)
-        instances.push({
-            type: 'engine_intake_left',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-engineOffsetX - engineRadius * 1.1, engineOffsetY + engineLength / 2, engineOffsetZ - engineRadius * 1.1),
-                maximum: new Cesium.Cartesian3(-engineOffsetX + engineRadius * 1.1, engineOffsetY + engineLength / 2 + engineLength * 0.1, engineOffsetZ + engineRadius * 1.1)
-            }),
-            color: Cesium.Color.fromCssColorString('#1a1a1a')
-        });
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_engine_left`,
+            position: createPositionCallback(-engineOffsetX, engineOffsetY, engineOffsetZ),
+            orientation: orientation,
+            cylinder: {
+                length: engineLength,
+                topRadius: engineRadius,
+                bottomRadius: engineRadius * 0.9,
+                material: Cesium.Color.fromCssColorString('#404040')
+            }
+        }));
+
+        // Left engine intake
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_intake_left`,
+            position: createPositionCallback(-engineOffsetX, engineOffsetY + engineLength / 2, engineOffsetZ),
+            orientation: orientation,
+            cylinder: {
+                length: engineLength * 0.15,
+                topRadius: engineRadius * 1.1,
+                bottomRadius: engineRadius * 1.1,
+                material: Cesium.Color.fromCssColorString('#1a1a1a')
+            }
+        }));
 
         // Right engine
-        instances.push({
-            type: 'engine_right',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(engineOffsetX - engineRadius, engineOffsetY - engineLength / 2, engineOffsetZ - engineRadius),
-                maximum: new Cesium.Cartesian3(engineOffsetX + engineRadius, engineOffsetY + engineLength / 2, engineOffsetZ + engineRadius)
-            }),
-            color: Cesium.Color.fromCssColorString('#404040')
-        });
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_engine_right`,
+            position: createPositionCallback(engineOffsetX, engineOffsetY, engineOffsetZ),
+            orientation: orientation,
+            cylinder: {
+                length: engineLength,
+                topRadius: engineRadius,
+                bottomRadius: engineRadius * 0.9,
+                material: Cesium.Color.fromCssColorString('#404040')
+            }
+        }));
 
         // Right engine intake
-        instances.push({
-            type: 'engine_intake_right',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(engineOffsetX - engineRadius * 1.1, engineOffsetY + engineLength / 2, engineOffsetZ - engineRadius * 1.1),
-                maximum: new Cesium.Cartesian3(engineOffsetX + engineRadius * 1.1, engineOffsetY + engineLength / 2 + engineLength * 0.1, engineOffsetZ + engineRadius * 1.1)
-            }),
-            color: Cesium.Color.fromCssColorString('#1a1a1a')
-        });
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_intake_right`,
+            position: createPositionCallback(engineOffsetX, engineOffsetY + engineLength / 2, engineOffsetZ),
+            orientation: orientation,
+            cylinder: {
+                length: engineLength * 0.15,
+                topRadius: engineRadius * 1.1,
+                bottomRadius: engineRadius * 1.1,
+                material: Cesium.Color.fromCssColorString('#1a1a1a')
+            }
+        }));
 
-        // Landing gear (simplified)
-        const gearHeight = fuselageRadius * 0.6;
+        // Accent stripe
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_stripe`,
+            position: createPositionCallback(0, 0, fuselageRadius * 0.3),
+            orientation: orientation,
+            box: {
+                dimensions: new Cesium.Cartesian3(fuselageRadius * 2.02, fuselageLength * 0.6, fuselageRadius * 0.15),
+                material: Cesium.Color.fromCssColorString(colors.accent)
+            }
+        }));
 
-        // Nose gear
-        instances.push({
-            type: 'nose_gear',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-wingThickness, fuselageLength * 0.3, -fuselageRadius - gearHeight),
-                maximum: new Cesium.Cartesian3(wingThickness, fuselageLength * 0.35, -fuselageRadius)
-            }),
-            color: Cesium.Color.fromCssColorString('#2a2a2a')
-        });
+        // Label
+        entities.push(this.dataSource.entities.add({
+            id: `${id}_label`,
+            position: createPositionCallback(0, 0, fuselageRadius * 2 + 10),
+            label: {
+                text: this.aircraft.get(id)?.callsign || id,
+                font: 'bold 14px monospace',
+                fillColor: Cesium.Color.fromCssColorString(Config.aircraft.labelColor),
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 3,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -5),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                scale: 1.0
+            }
+        }));
 
-        // Main gear left
-        instances.push({
-            type: 'main_gear_left',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-fuselageRadius * 1.5, wingOffsetY - wingChord * 0.2, -fuselageRadius - gearHeight),
-                maximum: new Cesium.Cartesian3(-fuselageRadius * 0.8, wingOffsetY, -fuselageRadius)
-            }),
-            color: Cesium.Color.fromCssColorString('#2a2a2a')
-        });
-
-        // Main gear right
-        instances.push({
-            type: 'main_gear_right',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(fuselageRadius * 0.8, wingOffsetY - wingChord * 0.2, -fuselageRadius - gearHeight),
-                maximum: new Cesium.Cartesian3(fuselageRadius * 1.5, wingOffsetY, -fuselageRadius)
-            }),
-            color: Cesium.Color.fromCssColorString('#2a2a2a')
-        });
-
-        // Accent stripe on fuselage
-        instances.push({
-            type: 'accent_stripe',
-            geometry: new Cesium.BoxGeometry({
-                minimum: new Cesium.Cartesian3(-fuselageRadius * 1.01, -fuselageLength * 0.3, fuselageRadius * 0.2),
-                maximum: new Cesium.Cartesian3(fuselageRadius * 1.01, fuselageLength * 0.35, fuselageRadius * 0.35)
-            }),
-            color: Cesium.Color.fromCssColorString(colors.accent)
-        });
-
-        return instances;
-    }
-
-    /**
-     * Create primitive instances for aircraft
-     */
-    createAircraftPrimitives(id, typeInfo, colors, position, heading) {
-        const modelParts = this.create3DAircraftModel(typeInfo, colors);
-        const primitives = [];
-
-        const headingRad = Cesium.Math.toRadians(heading - 90); // Adjust for aircraft pointing forward
-        const modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(
-            position,
-            new Cesium.HeadingPitchRoll(headingRad, 0, 0)
-        );
-
-        for (const part of modelParts) {
-            const primitive = new Cesium.Primitive({
-                geometryInstances: new Cesium.GeometryInstance({
-                    geometry: part.geometry,
-                    modelMatrix: modelMatrix,
-                    attributes: {
-                        color: Cesium.ColorGeometryInstanceAttribute.fromColor(part.color)
-                    },
-                    id: `${id}_${part.type}`
-                }),
-                appearance: new Cesium.PerInstanceColorAppearance({
-                    flat: false,
-                    translucent: false
-                }),
-                asynchronous: false
-            });
-            primitives.push(primitive);
-            this.primitiveCollection.add(primitive);
-        }
-
-        return primitives;
+        return entities;
     }
 
     /**
@@ -305,35 +334,10 @@ class AircraftManager {
         const typeInfo = Config.aircraft.types[type] || Config.aircraft.types['A320'];
         const colors = this.getAirlineColors(callsign);
 
-        const position = Cesium.Cartesian3.fromDegrees(lon, lat, altitude);
-
-        // Create 3D primitives
-        const primitives = this.createAircraftPrimitives(id, typeInfo, colors, position, heading);
-
-        // Create label entity
-        const labelEntity = this.dataSource.entities.add({
-            id: `${id}_label`,
-            name: callsign,
-            position: position,
-            label: {
-                text: callsign,
-                font: 'bold 14px monospace',
-                fillColor: Cesium.Color.fromCssColorString(Config.aircraft.labelColor),
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 3,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -30),
-                heightReference: Cesium.HeightReference.NONE,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scale: 1.0
-            }
-        });
-
+        // Store aircraft data first (needed for position callbacks)
         const aircraftData = {
             id,
-            primitives,
-            labelEntity,
+            entities: [],
             callsign,
             type,
             typeInfo,
@@ -348,13 +352,19 @@ class AircraftManager {
             targetAlt: altitude,
             targetHdg: heading,
             lastUpdate: Date.now(),
-            isVatsim: isVatsim
+            isVatsim: isVatsim,
+            needsUpdate: false
         };
 
         this.aircraft.set(id, aircraftData);
 
-        if (isVatsim) {
-            this.setupSmoothPosition(aircraftData);
+        // Create entities after data is stored
+        aircraftData.entities = this.createAircraftEntities(id, typeInfo, colors, lat, lon, altitude, heading);
+
+        // Update label text
+        const labelEntity = aircraftData.entities.find(e => e.id === `${id}_label`);
+        if (labelEntity) {
+            labelEntity.label.text = callsign;
         }
 
         this.updateAircraftList();
@@ -362,47 +372,11 @@ class AircraftManager {
     }
 
     /**
-     * Setup smooth position interpolation
+     * Update entity positions (called from render loop)
      */
-    setupSmoothPosition(aircraft) {
-        aircraft.labelEntity.position = new Cesium.CallbackProperty(() => {
-            return Cesium.Cartesian3.fromDegrees(
-                aircraft.lon,
-                aircraft.lat,
-                aircraft.altitude + 15 // Offset label above aircraft
-            );
-        }, false);
-    }
-
-    /**
-     * Update aircraft 3D model position and rotation
-     */
-    updateAircraftModel(aircraft) {
-        const position = Cesium.Cartesian3.fromDegrees(
-            aircraft.lon,
-            aircraft.lat,
-            aircraft.altitude
-        );
-
-        const headingRad = Cesium.Math.toRadians(aircraft.heading - 90);
-        const modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(
-            position,
-            new Cesium.HeadingPitchRoll(headingRad, 0, 0)
-        );
-
-        // Remove old primitives
-        for (const primitive of aircraft.primitives) {
-            this.primitiveCollection.remove(primitive);
-        }
-
-        // Create new primitives at updated position
-        aircraft.primitives = this.createAircraftPrimitives(
-            aircraft.id,
-            aircraft.typeInfo,
-            aircraft.colors,
-            position,
-            aircraft.heading
-        );
+    updateEntityPositions(aircraft) {
+        aircraft.needsUpdate = false;
+        // Position callbacks automatically handle updates
     }
 
     /**
@@ -419,15 +393,14 @@ class AircraftManager {
             if (updates.heading !== undefined) aircraft.targetHdg = updates.heading;
             if (updates.speed !== undefined) aircraft.speed = updates.speed;
 
+            // Smooth interpolation
             const lerpFactor = 0.15;
-
             aircraft.lat = this.lerp(aircraft.lat, aircraft.targetLat, lerpFactor);
             aircraft.lon = this.lerp(aircraft.lon, aircraft.targetLon, lerpFactor);
             aircraft.altitude = this.lerp(aircraft.altitude, aircraft.targetAlt, lerpFactor);
             aircraft.heading = this.lerpAngle(aircraft.heading, aircraft.targetHdg, lerpFactor);
 
-            // Update 3D model
-            this.updateAircraftModel(aircraft);
+            aircraft.needsUpdate = true;
         } else {
             if (updates.lat !== undefined) aircraft.lat = updates.lat;
             if (updates.lon !== undefined) aircraft.lon = updates.lon;
@@ -436,18 +409,11 @@ class AircraftManager {
             if (updates.speed !== undefined) aircraft.speed = updates.speed;
             if (updates.callsign !== undefined) {
                 aircraft.callsign = updates.callsign;
-                aircraft.labelEntity.name = updates.callsign;
-                aircraft.labelEntity.label.text = updates.callsign;
+                const labelEntity = aircraft.entities.find(e => e.id.endsWith('_label'));
+                if (labelEntity) {
+                    labelEntity.label.text = updates.callsign;
+                }
             }
-
-            const position = Cesium.Cartesian3.fromDegrees(
-                aircraft.lon,
-                aircraft.lat,
-                aircraft.altitude + 15
-            );
-            aircraft.labelEntity.position = position;
-
-            this.updateAircraftModel(aircraft);
         }
     }
 
@@ -466,15 +432,12 @@ class AircraftManager {
         const aircraft = this.aircraft.get(id);
         if (!aircraft) return;
 
-        // Remove 3D primitives
-        for (const primitive of aircraft.primitives) {
-            this.primitiveCollection.remove(primitive);
+        // Remove all entities
+        for (const entity of aircraft.entities) {
+            this.dataSource.entities.remove(entity);
         }
 
-        // Remove label
-        this.dataSource.entities.remove(aircraft.labelEntity);
         this.aircraft.delete(id);
-
         this.updateAircraftList();
     }
 
@@ -511,11 +474,10 @@ class AircraftManager {
 
     clearAll() {
         for (const aircraft of this.aircraft.values()) {
-            for (const primitive of aircraft.primitives) {
-                this.primitiveCollection.remove(primitive);
+            for (const entity of aircraft.entities) {
+                this.dataSource.entities.remove(entity);
             }
         }
-        this.dataSource.entities.removeAll();
         this.aircraft.clear();
         this.updateAircraftList();
     }
@@ -523,12 +485,6 @@ class AircraftManager {
     focusOn(id) {
         const aircraft = this.aircraft.get(id);
         if (!aircraft) return;
-
-        const position = Cesium.Cartesian3.fromDegrees(
-            aircraft.lon,
-            aircraft.lat,
-            aircraft.altitude
-        );
 
         this.viewer.camera.flyTo({
             destination: Cesium.Cartesian3.fromDegrees(
