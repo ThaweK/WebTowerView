@@ -23,12 +23,7 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create imagery provider - use OpenStreetMap (free, no token needed)
-        const imageryProvider = new Cesium.OpenStreetMapImageryProvider({
-            url: 'https://tile.openstreetmap.org/'
-        });
-
-        // Create Cesium viewer
+        // Create Cesium viewer with default Cesium Ion imagery
         this.viewer = new Cesium.Viewer('cesiumContainer', {
             animation: false,
             timeline: false,
@@ -41,8 +36,8 @@ class WebTowerViewApp {
             selectionIndicator: false,
             infoBox: false,
             requestRenderMode: false,
-            maximumRenderTimeChange: Infinity,
-            imageryProvider: imageryProvider
+            maximumRenderTimeChange: Infinity
+            // Use default Cesium Ion imagery (Bing Maps)
         });
 
         // Ensure globe and sky are visible
