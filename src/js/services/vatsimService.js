@@ -23,8 +23,8 @@ class VatsimService {
         this.renderInterval = null;
 
         // Settings
-        this.fetchIntervalMs = 15000; // VATSIM data updates every ~15 seconds
-        this.renderIntervalMs = 33;   // ~30 FPS for smooth movement
+        this.fetchIntervalMs = 5000; // Fetch every 5 seconds for fresher data
+        this.renderIntervalMs = 16;   // ~60 FPS for smoother movement
 
         // Constants
         this.FEET_TO_METERS = 0.3048;

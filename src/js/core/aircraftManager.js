@@ -65,7 +65,7 @@ class AircraftManager {
                 outlineColor: Cesium.Color.GRAY
             },
 
-            // Label
+            // Label - use NONE for heightReference to match box position
             label: {
                 text: callsign,
                 font: '14px monospace',
@@ -75,7 +75,7 @@ class AircraftManager {
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                 verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                 pixelOffset: new Cesium.Cartesian2(0, -20),
-                heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                heightReference: Cesium.HeightReference.NONE,
                 disableDepthTestDistance: Number.POSITIVE_INFINITY
             },
 
