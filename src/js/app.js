@@ -23,7 +23,21 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create Cesium viewer without default imagery (we'll add it manually)
+        // Create imagery provider first
+        let imageryProvider;
+        try {
+            imageryProvider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+                'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
+            );
+            console.log('ArcGIS World Imagery ready');
+        } catch (e) {
+            console.warn('ArcGIS failed, using fallback');
+            imageryProvider = new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://tile.openstreetmap.org/'
+            });
+        }
+
+        // Create Cesium viewer with imagery
         this.viewer = new Cesium.Viewer('cesiumContainer', {
             animation: false,
             timeline: false,
@@ -37,44 +51,21 @@ class WebTowerViewApp {
             infoBox: false,
             requestRenderMode: false,
             maximumRenderTimeChange: Infinity,
-            baseLayer: false  // Don't add default imagery
+            imageryProvider: imageryProvider
         });
 
-        // Add ArcGIS World Imagery (free satellite imagery)
-        try {
-            const arcGisImagery = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
-                'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
-            );
-            this.viewer.imageryLayers.addImageryProvider(arcGisImagery);
-            console.log('ArcGIS World Imagery loaded');
-        } catch (e) {
-            console.warn('Could not load ArcGIS imagery:', e.message);
-            // Fallback to OpenStreetMap
-            try {
-                const osmImagery = new Cesium.OpenStreetMapImageryProvider({
-                    url: 'https://tile.openstreetmap.org/'
-                });
-                this.viewer.imageryLayers.addImageryProvider(osmImagery);
-                console.log('OpenStreetMap imagery loaded as fallback');
-            } catch (e2) {
-                console.warn('Could not load OSM imagery:', e2.message);
-            }
-        }
+        console.log('Viewer created with imagery');
 
-        // Ensure globe and sky are visible
-        this.viewer.scene.globe.show = true;
-        this.viewer.scene.skyBox.show = true;
+        // Ensure globe is visible and configured
+        const globe = this.viewer.scene.globe;
+        globe.show = true;
+        globe.enableLighting = false;
+        globe.depthTestAgainstTerrain = false;
+        globe.baseColor = Cesium.Color.fromCssColorString('#2d5a27');
+
+        // Show atmosphere
         this.viewer.scene.skyAtmosphere.show = true;
-        this.viewer.scene.sun.show = true;
-        this.viewer.scene.moon.show = true;
-
-        // Configure scene
-        this.viewer.scene.globe.enableLighting = false;
-        this.viewer.scene.globe.depthTestAgainstTerrain = false;
         this.viewer.scene.fog.enabled = false;
-
-        // Set globe base color (visible before tiles load)
-        this.viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#1a3d1a');
 
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
