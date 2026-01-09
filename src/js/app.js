@@ -12,6 +12,7 @@ class WebTowerViewApp {
         this.osmBuildings = null;
         this.metarService = null;
         this.vatsimService = null;
+        this.weatherEffects = null;
         this.currentIcao = Config.defaultAirport.icao;
     }
 
@@ -91,9 +92,13 @@ class WebTowerViewApp {
         // Initialize services
         this.metarService = new MetarService();
         this.vatsimService = new VatsimService(this.aircraftManager, this.viewer);
+        this.weatherEffects = new WeatherEffects(this.viewer);
 
-        // Setup METAR listener
-        this.metarService.addListener((metar) => this.updateWeatherDisplay(metar));
+        // Setup METAR listener - update display and visual effects
+        this.metarService.addListener((metar) => {
+            this.updateWeatherDisplay(metar);
+            this.weatherEffects.applyWeather(metar);
+        });
 
         // Initialize UI
         ControlPanel.init(this);
@@ -150,8 +155,8 @@ class WebTowerViewApp {
             this.metarService.startUpdates(icao);
         }
 
-        // Update VATSIM center
-        this.vatsimService.setCenter(lat, lon);
+        // Update VATSIM center with terrain height for altitude calculations
+        this.vatsimService.setCenter(lat, lon, terrainHeight);
 
         this.towerCamera.flyTo(lat, lon, terrainHeight, () => {
             document.getElementById('input-lat').value = lat.toFixed(5);

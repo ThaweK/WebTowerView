@@ -11,6 +11,7 @@ class VatsimService {
         // State
         this.centerLat = 0;
         this.centerLon = 0;
+        this.centerElevation = 0; // Airport elevation in meters
         this.radius = 100; // km
         this.enabled = false;
 
@@ -24,6 +25,10 @@ class VatsimService {
         // Settings
         this.fetchIntervalMs = 15000; // VATSIM data updates every ~15 seconds
         this.renderIntervalMs = 33;   // ~30 FPS for smooth movement
+
+        // Constants
+        this.FEET_TO_METERS = 0.3048;
+        this.GROUND_SPEED_THRESHOLD = 50; // knots - below this, aircraft is on ground
     }
 
     /**
@@ -79,9 +84,33 @@ class VatsimService {
     /**
      * Update center position
      */
-    setCenter(lat, lon) {
+    setCenter(lat, lon, elevation = 0) {
         this.centerLat = lat;
         this.centerLon = lon;
+        this.centerElevation = elevation;
+    }
+
+    /**
+     * Convert VATSIM altitude (feet MSL) to meters for Cesium
+     * Accounts for pressure altitude vs true altitude
+     */
+    convertAltitude(altitudeFeet, groundspeed, pilotLat, pilotLon) {
+        // If aircraft is on ground (low groundspeed), use ground level
+        if (groundspeed < this.GROUND_SPEED_THRESHOLD) {
+            // Aircraft is on ground - use small offset above terrain
+            return 2; // 2 meters above ground (will be added to terrain height)
+        }
+
+        // For airborne aircraft, convert feet to meters
+        // VATSIM altitude is pressure altitude (MSL)
+        const altitudeMeters = altitudeFeet * this.FEET_TO_METERS;
+
+        // Approximate: aircraft altitude relative to airport elevation
+        // This gives AGL-like altitude for local area
+        const agl = altitudeMeters - this.centerElevation;
+
+        // Return altitude above ground (minimum 10m for airborne)
+        return Math.max(10, agl);
     }
 
     /**
@@ -112,6 +141,14 @@ class VatsimService {
             for (const pilot of nearbyPilots) {
                 seenCallsigns.add(pilot.callsign);
 
+                // Convert altitude from VATSIM feet to meters AGL
+                const altitudeAGL = this.convertAltitude(
+                    pilot.altitude,
+                    pilot.groundspeed,
+                    pilot.latitude,
+                    pilot.longitude
+                );
+
                 const existing = this.pilots.get(pilot.callsign);
 
                 if (existing) {
@@ -123,7 +160,7 @@ class VatsimService {
 
                     existing.targetLat = pilot.latitude;
                     existing.targetLon = pilot.longitude;
-                    existing.targetAlt = pilot.altitude;
+                    existing.targetAlt = altitudeAGL;
                     existing.targetHdg = pilot.heading;
 
                     existing.lastUpdate = now;
@@ -135,17 +172,17 @@ class VatsimService {
                         // Current interpolated position
                         currentLat: pilot.latitude,
                         currentLon: pilot.longitude,
-                        currentAlt: pilot.altitude,
+                        currentAlt: altitudeAGL,
                         currentHdg: pilot.heading,
                         // Previous position (for interpolation start)
                         prevLat: pilot.latitude,
                         prevLon: pilot.longitude,
-                        prevAlt: pilot.altitude,
+                        prevAlt: altitudeAGL,
                         prevHdg: pilot.heading,
                         // Target position (for interpolation end)
                         targetLat: pilot.latitude,
                         targetLon: pilot.longitude,
-                        targetAlt: pilot.altitude,
+                        targetAlt: altitudeAGL,
                         targetHdg: pilot.heading,
                         // Meta
                         lastUpdate: now,
@@ -161,7 +198,7 @@ class VatsimService {
                         type: this.parseAircraftType(pilot.flight_plan?.aircraft_short),
                         lat: pilot.latitude,
                         lon: pilot.longitude,
-                        altitude: pilot.altitude,
+                        altitude: altitudeAGL,
                         heading: pilot.heading,
                         isVatsim: true
                     });
