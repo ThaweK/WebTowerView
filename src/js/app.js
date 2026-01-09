@@ -23,7 +23,7 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create Cesium viewer with default Cesium Ion imagery
+        // Create Cesium viewer without default imagery (we'll add it manually)
         this.viewer = new Cesium.Viewer('cesiumContainer', {
             animation: false,
             timeline: false,
@@ -36,9 +36,22 @@ class WebTowerViewApp {
             selectionIndicator: false,
             infoBox: false,
             requestRenderMode: false,
-            maximumRenderTimeChange: Infinity
-            // Use default Cesium Ion imagery (Bing Maps)
+            maximumRenderTimeChange: Infinity,
+            baseLayer: false  // Don't add default imagery
         });
+
+        // Add Cesium Ion World Imagery (Sentinel-2 / Bing replacement)
+        if (Config.CESIUM_ION_TOKEN) {
+            try {
+                const imageryLayer = Cesium.ImageryLayer.fromProviderAsync(
+                    Cesium.IonImageryProvider.fromAssetId(2) // Cesium World Imagery
+                );
+                this.viewer.imageryLayers.add(imageryLayer);
+                console.log('Cesium World Imagery loaded');
+            } catch (e) {
+                console.warn('Could not load imagery:', e.message);
+            }
+        }
 
         // Ensure globe and sky are visible
         this.viewer.scene.globe.show = true;
