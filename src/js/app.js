@@ -23,21 +23,8 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Setup imagery provider - use Ion if token available, otherwise OpenStreetMap
-        let imageryProvider;
-        if (Config.CESIUM_ION_TOKEN) {
-            // Use Cesium Ion World Imagery (requires token)
-            imageryProvider = undefined; // Let Cesium use default Ion imagery
-        } else {
-            // Use OpenStreetMap tiles (free, no token required)
-            imageryProvider = new Cesium.OpenStreetMapImageryProvider({
-                url: 'https://tile.openstreetmap.org/'
-            });
-            console.log('Using OpenStreetMap imagery (no Cesium Ion token)');
-        }
-
-        // Create Cesium viewer
-        this.viewer = new Cesium.Viewer('cesiumContainer', {
+        // Setup viewer options
+        const viewerOptions = {
             animation: false,
             timeline: false,
             baseLayerPicker: false,
@@ -47,9 +34,20 @@ class WebTowerViewApp {
             navigationHelpButton: false,
             sceneModePicker: false,
             selectionIndicator: false,
-            infoBox: false,
-            imageryProvider: imageryProvider
-        });
+            infoBox: false
+        };
+
+        // If no Ion token, use OpenStreetMap tiles
+        if (!Config.CESIUM_ION_TOKEN) {
+            viewerOptions.imageryProvider = new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://tile.openstreetmap.org/'
+            });
+            console.log('Using OpenStreetMap imagery (no Cesium Ion token)');
+        }
+        // With Ion token, don't specify imageryProvider - let Cesium use default Ion imagery
+
+        // Create Cesium viewer
+        this.viewer = new Cesium.Viewer('cesiumContainer', viewerOptions);
 
         console.log('Viewer created');
 
@@ -65,6 +63,22 @@ class WebTowerViewApp {
 
         console.log('Globe show:', globe.show);
         console.log('Imagery layers count:', this.viewer.imageryLayers.length);
+
+        // Debug: log imagery layer details
+        for (let i = 0; i < this.viewer.imageryLayers.length; i++) {
+            const layer = this.viewer.imageryLayers.get(i);
+            console.log(`Layer ${i}:`, layer.imageryProvider.constructor.name, 'ready:', layer.imageryProvider.ready);
+        }
+
+        // Debug: Check camera position after 2 seconds
+        setTimeout(() => {
+            const pos = this.viewer.camera.positionCartographic;
+            console.log('Camera position:', {
+                lon: Cesium.Math.toDegrees(pos.longitude).toFixed(4),
+                lat: Cesium.Math.toDegrees(pos.latitude).toFixed(4),
+                height: pos.height.toFixed(1)
+            });
+        }, 2000);
 
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
