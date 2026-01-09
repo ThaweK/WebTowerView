@@ -67,7 +67,12 @@ class WebTowerViewApp {
         // Debug: log imagery layer details
         for (let i = 0; i < this.viewer.imageryLayers.length; i++) {
             const layer = this.viewer.imageryLayers.get(i);
-            console.log(`Layer ${i}:`, layer.imageryProvider.constructor.name, 'ready:', layer.imageryProvider.ready);
+            const provider = layer.imageryProvider;
+            if (provider) {
+                console.log(`Layer ${i}:`, provider.constructor?.name || 'unknown', 'ready:', provider.ready);
+            } else {
+                console.log(`Layer ${i}: provider not yet available`);
+            }
         }
 
         // Debug: Check camera position after 2 seconds
