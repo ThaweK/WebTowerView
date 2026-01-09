@@ -37,31 +37,47 @@ class WebTowerViewApp {
             selectionIndicator: false,
             infoBox: false,
 
-            // Enable terrain
-            terrainProvider: Config.CESIUM_ION_TOKEN ?
-                Cesium.createWorldTerrain() :
-                new Cesium.EllipsoidTerrainProvider(),
-
             // Use high quality rendering
             requestRenderMode: false,
             maximumRenderTimeChange: Infinity,
 
-            // Imagery
-            imageryProvider: new Cesium.OpenStreetMapImageryProvider({
-                url: 'https://a.tile.openstreetmap.org/'
-            })
+            // Imagery - OpenStreetMap
+            baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+                Cesium.TileMapServiceImageryProvider.fromUrl(
+                    Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")
+                )
+            )
         });
 
+        // Add OpenStreetMap imagery on top
+        try {
+            const osmProvider = new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://tile.openstreetmap.org/'
+            });
+            this.viewer.imageryLayers.addImageryProvider(osmProvider);
+        } catch (e) {
+            console.warn('Could not load OSM imagery:', e.message);
+        }
+
         // Configure scene
-        this.viewer.scene.globe.enableLighting = true;
+        this.viewer.scene.globe.enableLighting = false;
         this.viewer.scene.globe.depthTestAgainstTerrain = true;
         this.viewer.scene.fog.enabled = true;
         this.viewer.scene.fog.density = 0.0002;
 
+        // Add terrain if token is available
+        if (Config.CESIUM_ION_TOKEN) {
+            try {
+                this.viewer.scene.setTerrain(Cesium.Terrain.fromWorldTerrain());
+            } catch (e) {
+                console.warn('Could not load terrain:', e.message);
+            }
+        }
+
         // Add OSM Buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
             try {
-                this.osmBuildings = await Cesium.createOsmBuildings();
+                this.osmBuildings = await Cesium.createOsmBuildingsAsync();
                 this.viewer.scene.primitives.add(this.osmBuildings);
             } catch (e) {
                 console.warn('Could not load OSM Buildings:', e.message);
