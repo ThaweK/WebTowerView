@@ -23,7 +23,20 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create Cesium viewer with default settings
+        // Setup imagery provider - use Ion if token available, otherwise OpenStreetMap
+        let imageryProvider;
+        if (Config.CESIUM_ION_TOKEN) {
+            // Use Cesium Ion World Imagery (requires token)
+            imageryProvider = undefined; // Let Cesium use default Ion imagery
+        } else {
+            // Use OpenStreetMap tiles (free, no token required)
+            imageryProvider = new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://tile.openstreetmap.org/'
+            });
+            console.log('Using OpenStreetMap imagery (no Cesium Ion token)');
+        }
+
+        // Create Cesium viewer
         this.viewer = new Cesium.Viewer('cesiumContainer', {
             animation: false,
             timeline: false,
@@ -34,7 +47,8 @@ class WebTowerViewApp {
             navigationHelpButton: false,
             sceneModePicker: false,
             selectionIndicator: false,
-            infoBox: false
+            infoBox: false,
+            imageryProvider: imageryProvider
         });
 
         console.log('Viewer created');
@@ -54,8 +68,6 @@ class WebTowerViewApp {
 
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
-            // Temporarily disable terrain to debug imagery issue
-            /*
             try {
                 const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
                 this.viewer.terrainProvider = terrain;
@@ -63,10 +75,7 @@ class WebTowerViewApp {
             } catch (e) {
                 console.warn('Could not load terrain:', e.message);
             }
-            */
 
-            // Temporarily disable buildings to debug imagery issue
-            /*
             try {
                 this.osmBuildings = await Cesium.createOsmBuildingsAsync();
                 this.viewer.scene.primitives.add(this.osmBuildings);
@@ -74,7 +83,6 @@ class WebTowerViewApp {
             } catch (e) {
                 console.warn('Could not load OSM Buildings:', e.message);
             }
-            */
         }
 
         // Initialize modules
