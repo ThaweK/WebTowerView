@@ -158,6 +158,9 @@ class WebTowerViewApp {
         // Update VATSIM center with terrain height for altitude calculations
         this.vatsimService.setCenter(lat, lon, terrainHeight);
 
+        // Update weather effects center for cloud positioning
+        this.weatherEffects.setCenter(lat, lon);
+
         this.towerCamera.flyTo(lat, lon, terrainHeight, () => {
             document.getElementById('input-lat').value = lat.toFixed(5);
             document.getElementById('input-lon').value = lon.toFixed(5);

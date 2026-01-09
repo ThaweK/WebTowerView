@@ -109,8 +109,9 @@ class VatsimService {
         // This gives AGL-like altitude for local area
         const agl = altitudeMeters - this.centerElevation;
 
-        // Return altitude above ground (minimum 10m for airborne)
-        return Math.max(10, agl);
+        // IMPORTANT: Never go underground - minimum 0m AGL
+        // For airborne aircraft, minimum 10m
+        return Math.max(0, agl);
     }
 
     /**

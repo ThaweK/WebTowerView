@@ -18,6 +18,23 @@ class WeatherEffects {
 
         // Rain/snow particles
         this.precipitationSystem = null;
+
+        // Cloud layers
+        this.cloudEntities = [];
+        this.cloudDataSource = new Cesium.CustomDataSource('clouds');
+        viewer.dataSources.add(this.cloudDataSource);
+
+        // Reference position for clouds
+        this.centerLat = 0;
+        this.centerLon = 0;
+    }
+
+    /**
+     * Set center position for cloud rendering
+     */
+    setCenter(lat, lon) {
+        this.centerLat = lat;
+        this.centerLon = lon;
     }
 
     /**
@@ -83,10 +100,14 @@ class WeatherEffects {
     }
 
     /**
-     * Apply cloud/atmosphere effects
+     * Apply cloud/atmosphere effects - creates actual 3D cloud layers
      */
     applyClouds(clouds, flightCategory) {
         const atmosphere = this.scene.skyAtmosphere;
+
+        // Remove existing cloud entities
+        this.cloudDataSource.entities.removeAll();
+        this.cloudEntities = [];
 
         if (!clouds || clouds.length === 0) {
             // Clear sky
@@ -96,7 +117,12 @@ class WeatherEffects {
             return;
         }
 
-        // Find lowest cloud layer
+        // Create 3D cloud layers for each reported layer
+        for (const cloud of clouds) {
+            this.createCloudLayer(cloud.cover, cloud.base);
+        }
+
+        // Find lowest cloud layer for atmosphere adjustment
         const lowestCloud = clouds[0];
         const coverage = lowestCloud?.cover || 'SKC';
 
@@ -129,6 +155,56 @@ class WeatherEffects {
         if (flightCategory === 'IFR' || flightCategory === 'LIFR') {
             atmosphere.brightnessShift -= 0.1;
             atmosphere.saturationShift -= 0.1;
+        }
+    }
+
+    /**
+     * Create a cloud layer at specified altitude
+     */
+    createCloudLayer(coverage, baseFeet) {
+        // Convert feet to meters
+        const baseMeters = baseFeet * 0.3048;
+
+        // Coverage determines opacity and spread
+        const coverageSettings = {
+            'FEW': { opacity: 0.2, count: 8, spread: 3000 },
+            'SCT': { opacity: 0.35, count: 15, spread: 4000 },
+            'BKN': { opacity: 0.5, count: 25, spread: 5000 },
+            'OVC': { opacity: 0.7, count: 40, spread: 6000 },
+            'VV': { opacity: 0.85, count: 50, spread: 4000 }  // Vertical visibility (fog/mist)
+        };
+
+        const settings = coverageSettings[coverage] || coverageSettings['SCT'];
+
+        // Create cloud patches around the center position
+        for (let i = 0; i < settings.count; i++) {
+            // Random position within spread radius
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * settings.spread;
+            const offsetLat = (distance * Math.cos(angle)) / 111000; // meters to degrees
+            const offsetLon = (distance * Math.sin(angle)) / (111000 * Math.cos(this.centerLat * Math.PI / 180));
+
+            const cloudLat = this.centerLat + offsetLat;
+            const cloudLon = this.centerLon + offsetLon;
+
+            // Random altitude variation within layer (±50m)
+            const altitude = baseMeters + (Math.random() - 0.5) * 100;
+
+            // Random cloud size
+            const size = 200 + Math.random() * 400;
+            const height = 30 + Math.random() * 70;
+
+            // Create cloud entity as semi-transparent ellipsoid
+            const entity = this.cloudDataSource.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(cloudLon, cloudLat, altitude),
+                ellipsoid: {
+                    radii: new Cesium.Cartesian3(size, size, height),
+                    material: Cesium.Color.WHITE.withAlpha(settings.opacity * (0.5 + Math.random() * 0.5)),
+                    outline: false
+                }
+            });
+
+            this.cloudEntities.push(entity);
         }
     }
 
@@ -294,6 +370,10 @@ class WeatherEffects {
             this.scene.primitives.remove(this.precipitationSystem);
             this.precipitationSystem = null;
         }
+
+        // Remove cloud entities
+        this.cloudDataSource.entities.removeAll();
+        this.cloudEntities = [];
 
         // Reset globe
         this.scene.globe.enableLighting = false;
