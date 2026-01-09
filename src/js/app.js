@@ -23,9 +23,13 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Create Cesium viewer with default imagery (Bing Maps if no token, or Ion)
+        // Create imagery provider - use OpenStreetMap (free, no token needed)
+        const imageryProvider = new Cesium.OpenStreetMapImageryProvider({
+            url: 'https://tile.openstreetmap.org/'
+        });
+
+        // Create Cesium viewer
         this.viewer = new Cesium.Viewer('cesiumContainer', {
-            // Disable default UI elements for cleaner look
             animation: false,
             timeline: false,
             baseLayerPicker: false,
@@ -36,24 +40,27 @@ class WebTowerViewApp {
             sceneModePicker: false,
             selectionIndicator: false,
             infoBox: false,
-
-            // Use high quality rendering
             requestRenderMode: false,
-            maximumRenderTimeChange: Infinity
+            maximumRenderTimeChange: Infinity,
+            imageryProvider: imageryProvider
         });
 
-        // Make sure globe is visible
+        // Ensure globe and sky are visible
         this.viewer.scene.globe.show = true;
         this.viewer.scene.skyBox.show = true;
+        this.viewer.scene.skyAtmosphere.show = true;
         this.viewer.scene.sun.show = true;
+        this.viewer.scene.moon.show = true;
 
         // Configure scene
         this.viewer.scene.globe.enableLighting = false;
         this.viewer.scene.globe.depthTestAgainstTerrain = false;
-        this.viewer.scene.fog.enabled = true;
-        this.viewer.scene.fog.density = 0.0001;
+        this.viewer.scene.fog.enabled = false;
 
-        // Add terrain if token is available
+        // Set globe base color (visible before tiles load)
+        this.viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#1a3d1a');
+
+        // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
             try {
                 const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
@@ -63,7 +70,6 @@ class WebTowerViewApp {
                 console.warn('Could not load terrain:', e.message);
             }
 
-            // Add OSM Buildings
             try {
                 this.osmBuildings = await Cesium.createOsmBuildingsAsync();
                 this.viewer.scene.primitives.add(this.osmBuildings);
@@ -85,7 +91,7 @@ class WebTowerViewApp {
         // Set cursor style
         this.viewer.canvas.style.cursor = 'grab';
 
-        // Go to default airport and sample terrain height
+        // Go to default airport
         await this.goToLocation(
             Config.defaultAirport.lat,
             Config.defaultAirport.lon
@@ -93,44 +99,36 @@ class WebTowerViewApp {
 
         console.log('WebTowerView initialized successfully');
         if (!Config.CESIUM_ION_TOKEN) {
-            console.log('Tip: Get a free Cesium Ion token at https://cesium.com/ion/tokens for 3D buildings and terrain');
+            console.log('Tip: Add Cesium Ion token in config.js for 3D terrain and buildings');
         }
     }
 
     /**
      * Go to a specific location with automatic terrain height detection
-     * @param {number} lat
-     * @param {number} lon
      */
     async goToLocation(lat, lon) {
-        // Try to get terrain height at this location
         let terrainHeight = 0;
 
         try {
             const positions = [Cesium.Cartographic.fromDegrees(lon, lat)];
             const terrain = this.viewer.terrainProvider;
 
-            if (terrain && terrain.ready !== false) {
+            if (terrain && terrain.availability) {
                 const sampledPositions = await Cesium.sampleTerrainMostDetailed(terrain, positions);
                 if (sampledPositions && sampledPositions[0]) {
                     terrainHeight = sampledPositions[0].height || 0;
-                    console.log(`Terrain height at location: ${terrainHeight.toFixed(1)}m`);
+                    console.log(`Terrain height: ${terrainHeight.toFixed(1)}m`);
                 }
             }
         } catch (e) {
-            console.warn('Could not sample terrain height:', e.message);
-            // Use config elevation as fallback
-            terrainHeight = Config.defaultAirport.elevation || 0;
+            console.warn('Could not sample terrain:', e.message);
         }
 
-        // Ensure minimum height above terrain
         terrainHeight = Math.max(0, terrainHeight);
 
         this.towerCamera.flyTo(lat, lon, terrainHeight, () => {
-            // Update input fields
             document.getElementById('input-lat').value = lat.toFixed(5);
             document.getElementById('input-lon').value = lon.toFixed(5);
-
             ControlPanel.updateDisplayValues();
         });
     }
@@ -141,11 +139,9 @@ class WebTowerViewApp {
     loadDemo() {
         const state = this.towerCamera.getState();
 
-        // Create sample airport layout
         const sampleGeoJSON = GeoJSONLoader.createSampleAirport(state.lat, state.lon);
         this.airportOverlay.loadFromGeoJSON(sampleGeoJSON);
 
-        // Add sample aircraft
         this.aircraftManager.addAircraft({
             callsign: 'LOT123',
             type: 'B738',
@@ -198,6 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.app = new WebTowerViewApp();
     window.app.init().catch(err => {
         console.error('Failed to initialize WebTowerView:', err);
-        alert('Błąd inicjalizacji aplikacji. Sprawdź konsolę.');
+        alert('Błąd inicjalizacji. Sprawdź konsolę (F12).');
     });
 });
