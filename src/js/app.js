@@ -107,6 +107,9 @@ class WebTowerViewApp {
         // Setup VATSIM controls
         this.setupVatsimControls();
 
+        // Setup FPS counter
+        this.setupFPSCounter();
+
         // Set cursor style
         this.viewer.canvas.style.cursor = 'grab';
 
@@ -306,6 +309,42 @@ class WebTowerViewApp {
                 countSpan.textContent = this.vatsimService.getPilotCount();
             }
         }, 1000);
+    }
+
+    /**
+     * Setup FPS counter
+     */
+    setupFPSCounter() {
+        const fpsElement = document.getElementById('fps-value');
+        if (!fpsElement) return;
+
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let fps = 60;
+
+        // Use Cesium's postRender event for accurate frame counting
+        this.viewer.scene.postRender.addEventListener(() => {
+            frameCount++;
+            const currentTime = performance.now();
+            const elapsed = currentTime - lastTime;
+
+            // Update FPS every 500ms
+            if (elapsed >= 500) {
+                fps = Math.round((frameCount * 1000) / elapsed);
+                frameCount = 0;
+                lastTime = currentTime;
+
+                fpsElement.textContent = fps;
+
+                // Color coding based on FPS
+                fpsElement.classList.remove('low', 'medium');
+                if (fps < 20) {
+                    fpsElement.classList.add('low');
+                } else if (fps < 40) {
+                    fpsElement.classList.add('medium');
+                }
+            }
+        });
     }
 }
 

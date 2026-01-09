@@ -173,8 +173,25 @@
         <!-- Compass -->
         <div id="compass">
             <div id="compass-ring">
-                <div id="compass-arrow">N</div>
+                <div id="compass-arrow">
+                    <svg viewBox="0 0 40 40" width="40" height="40">
+                        <!-- North pointer (red) -->
+                        <polygon points="20,2 24,18 20,15 16,18" fill="#ff3333" stroke="#990000" stroke-width="0.5"/>
+                        <!-- South pointer (white) -->
+                        <polygon points="20,38 24,22 20,25 16,22" fill="#ffffff" stroke="#666666" stroke-width="0.5"/>
+                        <!-- Center circle -->
+                        <circle cx="20" cy="20" r="3" fill="#333" stroke="#666" stroke-width="0.5"/>
+                        <!-- N label -->
+                        <text x="20" y="8" text-anchor="middle" font-size="6" font-weight="bold" fill="#ff3333">N</text>
+                    </svg>
+                </div>
             </div>
+            <div id="compass-heading">000°</div>
+        </div>
+
+        <!-- FPS Counter -->
+        <div id="fps-counter">
+            <span id="fps-value">60</span> FPS
         </div>
 
         <!-- Instructions -->

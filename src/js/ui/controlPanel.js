@@ -181,10 +181,16 @@ const ControlPanel = {
         document.getElementById('pos-alt').textContent = Math.round(state.elevation + state.height);
         document.getElementById('pos-heading').textContent = `${Math.round(state.heading)}°`;
 
-        // Update compass
+        // Update compass (rotate opposite to heading so N always points to true north)
         const compassArrow = document.getElementById('compass-arrow');
         if (compassArrow) {
-            compassArrow.style.transform = `rotate(${state.heading}deg)`;
+            compassArrow.style.transform = `rotate(${-state.heading}deg)`;
+        }
+
+        // Update compass heading display
+        const compassHeading = document.getElementById('compass-heading');
+        if (compassHeading) {
+            compassHeading.textContent = `${Math.round(state.heading).toString().padStart(3, '0')}°`;
         }
     },
 
