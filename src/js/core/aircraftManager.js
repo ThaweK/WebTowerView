@@ -198,6 +198,8 @@ class AircraftManager {
         this.aircraft.set(id, aircraftData);
 
         // Create the aircraft entity with glTF model
+        // heightReference: RELATIVE_TO_GROUND ensures altitude is measured from terrain surface,
+        // not the WGS84 ellipsoid. This fixes the parallax effect at oblique viewing angles.
         const entity = this.dataSource.entities.add({
             id: id,
             position: this.createPositionProperty(id),
@@ -207,6 +209,7 @@ class AircraftManager {
                 scale: modelScale,
                 minimumPixelSize: 32,  // Always visible at minimum size
                 maximumScale: 20000,    // Maximum scale when close
+                heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
                 runAnimations: false,
                 clampAnimations: true,
                 shadows: Cesium.ShadowMode.DISABLED,  // Disable shadows for performance
@@ -230,6 +233,7 @@ class AircraftManager {
                 outlineColor: Cesium.Color.BLACK,
                 outlineWidth: Config.aircraft.labelOutlineWidth,
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
                 verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                 pixelOffset: new Cesium.Cartesian2(0, -40),
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
