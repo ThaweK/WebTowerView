@@ -1,6 +1,6 @@
 /**
  * WebTowerView - Main Application
- * Airport 3D Tower View using CesiumJS
+ * Airport 3D Tower View using CesiumJS with optimized glTF aircraft models
  */
 
 class WebTowerViewApp {
@@ -9,6 +9,7 @@ class WebTowerViewApp {
         this.towerCamera = null;
         this.airportOverlay = null;
         this.aircraftManager = null;
+        this.modelManager = null;
         this.osmBuildings = null;
         this.metarService = null;
         this.vatsimService = null;
@@ -27,7 +28,7 @@ class WebTowerViewApp {
             Cesium.Ion.defaultAccessToken = Config.CESIUM_ION_TOKEN;
         }
 
-        // Setup viewer options
+        // Setup viewer options with optimizations
         const viewerOptions = {
             animation: false,
             timeline: false,
@@ -38,7 +39,26 @@ class WebTowerViewApp {
             navigationHelpButton: false,
             sceneModePicker: false,
             selectionIndicator: false,
-            infoBox: false
+            infoBox: false,
+            // Performance optimizations
+            requestRenderMode: false,  // Keep continuous rendering for smooth animations
+            maximumRenderTimeChange: Infinity,
+            targetFrameRate: 60,
+            // Scene settings
+            shadows: false,
+            terrainShadows: Cesium.ShadowMode.DISABLED,
+            // Context options for better precision
+            contextOptions: {
+                webgl: {
+                    alpha: false,
+                    depth: true,
+                    stencil: false,
+                    antialias: true,
+                    premultipliedAlpha: true,
+                    preserveDrawingBuffer: false,
+                    failIfMajorPerformanceCaveat: false
+                }
+            }
         };
 
         // If no Ion token, use OpenStreetMap tiles
@@ -48,50 +68,31 @@ class WebTowerViewApp {
             });
             console.log('Using OpenStreetMap imagery (no Cesium Ion token)');
         }
-        // With Ion token, don't specify imageryProvider - let Cesium use default Ion imagery
 
         // Create Cesium viewer
         this.viewer = new Cesium.Viewer('cesiumContainer', viewerOptions);
 
         console.log('Viewer created');
 
-        // Globe settings
-        const globe = this.viewer.scene.globe;
-        globe.show = true;
-        globe.enableLighting = false;
-        globe.depthTestAgainstTerrain = false;
-
-        // Atmosphere
-        this.viewer.scene.skyAtmosphere.show = true;
-        this.viewer.scene.fog.enabled = false;
+        // Configure scene for optimal performance and precision
+        this.configureScene();
 
         // Add terrain and buildings if token is available
         if (Config.CESIUM_ION_TOKEN) {
-            try {
-                const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
-                this.viewer.terrainProvider = terrain;
-                console.log('Terrain loaded');
-            } catch (e) {
-                console.warn('Could not load terrain:', e.message);
-            }
-
-            try {
-                this.osmBuildings = await Cesium.createOsmBuildingsAsync();
-                this.viewer.scene.primitives.add(this.osmBuildings);
-                console.log('OSM Buildings loaded');
-            } catch (e) {
-                console.warn('Could not load OSM Buildings:', e.message);
-            }
+            await this.loadTerrainAndBuildings();
         }
+
+        // Initialize model manager first
+        this.modelManager = new ModelManager();
 
         // Initialize modules
         this.towerCamera = new TowerCamera(this.viewer);
         this.airportOverlay = new AirportOverlay(this.viewer);
-        this.aircraftManager = new AircraftManager(this.viewer);
+        this.aircraftManager = new AircraftManager(this.viewer, this.modelManager);
 
         // Initialize services
         this.metarService = new MetarService();
-        this.vatsimService = new VatsimService(this.aircraftManager, this.viewer);
+        this.vatsimService = new VatsimService(this.aircraftManager, this.viewer, this.modelManager);
         this.weatherEffects = new WeatherEffects(this.viewer);
 
         // Setup METAR listener - update display and visual effects
@@ -130,6 +131,84 @@ class WebTowerViewApp {
     }
 
     /**
+     * Configure scene for optimal performance and precision
+     */
+    configureScene() {
+        const scene = this.viewer.scene;
+        const globe = scene.globe;
+
+        // Globe settings
+        globe.show = true;
+        globe.enableLighting = false;
+        globe.depthTestAgainstTerrain = true;  // Enable depth testing for proper occlusion
+        globe.showGroundAtmosphere = true;
+        globe.showWaterEffect = true;
+
+        // Precision settings - enable logarithmic depth buffer to reduce z-fighting
+        scene.logarithmicDepthBuffer = true;
+
+        // Near/far plane settings for better precision at close range
+        scene.camera.frustum.near = 1.0;      // 1 meter near plane
+        scene.camera.frustum.far = 500000000; // 500,000 km far plane
+
+        // Atmosphere and sky
+        scene.skyAtmosphere.show = true;
+        scene.fog.enabled = false;  // Disable by default, weather effects will control this
+        scene.fog.density = 0.0001;
+        scene.fog.minimumBrightness = 0.1;
+
+        // Rendering optimizations
+        scene.debugShowFramesPerSecond = false;
+        scene.requestRenderMode = false;  // Continuous rendering for smooth animations
+
+        // Anti-aliasing
+        if (Cesium.FeatureDetection.supportsImageRenderingPixelated()) {
+            this.viewer.resolutionScale = window.devicePixelRatio;
+        }
+
+        // FXAA for better edge rendering
+        scene.postProcessStages.fxaa.enabled = true;
+
+        // Disable unused features for performance
+        scene.highDynamicRange = false;
+        scene.sun.show = true;
+        scene.moon.show = false;
+        scene.skyBox.show = true;
+
+        // Ground atmosphere for better visuals
+        scene.globe.baseColor = Cesium.Color.fromCssColorString('#1a3a5c');
+
+        // Optimize tile loading
+        globe.tileCacheSize = 100;
+        globe.maximumScreenSpaceError = 2;  // Higher quality terrain
+
+        console.log('Scene configured with optimizations');
+    }
+
+    /**
+     * Load terrain and OSM buildings
+     */
+    async loadTerrainAndBuildings() {
+        // Load terrain
+        try {
+            const terrain = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
+            this.viewer.terrainProvider = terrain;
+            console.log('Terrain loaded');
+        } catch (e) {
+            console.warn('Could not load terrain:', e.message);
+        }
+
+        // Load OSM buildings
+        try {
+            this.osmBuildings = await Cesium.createOsmBuildingsAsync();
+            this.viewer.scene.primitives.add(this.osmBuildings);
+            console.log('OSM Buildings loaded');
+        } catch (e) {
+            console.warn('Could not load OSM Buildings:', e.message);
+        }
+    }
+
+    /**
      * Go to a specific location with automatic terrain height detection
      */
     async goToLocation(lat, lon, icao = null) {
@@ -158,6 +237,9 @@ class WebTowerViewApp {
             this.metarService.startUpdates(icao);
         }
 
+        // Set reference position for aircraft manager (helps with precision)
+        this.aircraftManager.setReferencePosition(lat, lon);
+
         // Update VATSIM center with terrain height for altitude calculations
         this.vatsimService.setCenter(lat, lon, terrainHeight);
 
@@ -180,6 +262,7 @@ class WebTowerViewApp {
         const sampleGeoJSON = GeoJSONLoader.createSampleAirport(state.lat, state.lon);
         this.airportOverlay.loadFromGeoJSON(sampleGeoJSON);
 
+        // Demo aircraft with different types
         this.aircraftManager.addAircraft({
             callsign: 'LOT123',
             type: 'B738',
@@ -200,14 +283,23 @@ class WebTowerViewApp {
 
         this.aircraftManager.addAircraft({
             callsign: 'WZZ789',
-            type: 'A320',
+            type: 'A321',
             lat: state.lat - 0.015,
             lon: state.lon - 0.005,
             altitude: 300,
             heading: 90
         });
 
-        console.log('Demo data loaded');
+        this.aircraftManager.addAircraft({
+            callsign: 'DLH101',
+            type: 'A333',
+            lat: state.lat + 0.008,
+            lon: state.lon + 0.015,
+            altitude: 500,
+            heading: 180
+        });
+
+        console.log('Demo data loaded with glTF models');
     }
 
     /**
@@ -251,12 +343,12 @@ class WebTowerViewApp {
                 <span class="value">${this.metarService.formatWind(metar)}</span>
             </div>
             <div class="weather-item">
-                <span class="label">Widoczność:</span>
+                <span class="label">Widocznosc:</span>
                 <span class="value">${this.metarService.formatVisibility(metar)}</span>
             </div>
             <div class="weather-item">
                 <span class="label">Temp:</span>
-                <span class="value">${metar.temp !== null ? metar.temp + '°C' : 'N/A'}</span>
+                <span class="value">${metar.temp !== null ? metar.temp + ' C' : 'N/A'}</span>
             </div>
             ${metar.clouds.length > 0 ? `
             <div class="weather-item">
@@ -353,6 +445,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.app = new WebTowerViewApp();
     window.app.init().catch(err => {
         console.error('Failed to initialize WebTowerView:', err);
-        alert('Błąd inicjalizacji. Sprawdź konsolę (F12).');
+        alert('Error initializing. Check console (F12).');
     });
 });

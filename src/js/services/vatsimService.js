@@ -1,12 +1,13 @@
 /**
  * VATSIM Live Traffic Service
- * Fetches real pilots from VATSIM and provides smooth position interpolation
+ * Fetches real pilots from VATSIM with proper ICAO type matching
  */
 
 class VatsimService {
-    constructor(aircraftManager, viewer) {
+    constructor(aircraftManager, viewer, modelManager) {
         this.aircraftManager = aircraftManager;
         this.viewer = viewer;
+        this.modelManager = modelManager;
 
         // State
         this.centerLat = 0;
@@ -15,16 +16,14 @@ class VatsimService {
         this.radius = 100; // km
         this.enabled = false;
 
-        // Pilots data with interpolation
-        this.pilots = new Map(); // callsign -> pilot data with interpolation state
+        // Pilots data
+        this.pilots = new Map(); // callsign -> pilot data
 
         // Update intervals
         this.fetchInterval = null;
-        this.renderInterval = null;
 
-        // Settings
-        this.fetchIntervalMs = 2000; // Fetch every 2 seconds for real-time data
-        this.renderIntervalMs = 16;   // ~60 FPS for smoother movement
+        // Settings - optimized for performance
+        this.fetchIntervalMs = 3000; // Fetch every 3 seconds
 
         // Constants
         this.FEET_TO_METERS = 0.3048;
@@ -49,11 +48,6 @@ class VatsimService {
         this.fetchInterval = setInterval(() => {
             this.fetchPilots();
         }, this.fetchIntervalMs);
-
-        // Smooth rendering loop (30+ FPS)
-        this.renderInterval = setInterval(() => {
-            this.updatePositions();
-        }, this.renderIntervalMs);
     }
 
     /**
@@ -65,11 +59,6 @@ class VatsimService {
         if (this.fetchInterval) {
             clearInterval(this.fetchInterval);
             this.fetchInterval = null;
-        }
-
-        if (this.renderInterval) {
-            clearInterval(this.renderInterval);
-            this.renderInterval = null;
         }
 
         // Remove all VATSIM aircraft
@@ -92,26 +81,52 @@ class VatsimService {
 
     /**
      * Convert VATSIM altitude (feet MSL) to meters for Cesium
-     * Accounts for pressure altitude vs true altitude
      */
-    convertAltitude(altitudeFeet, groundspeed, pilotLat, pilotLon) {
+    convertAltitude(altitudeFeet, groundspeed) {
         // If aircraft is on ground (low groundspeed), use ground level
         if (groundspeed < this.GROUND_SPEED_THRESHOLD) {
-            // Aircraft is on ground - use small offset above terrain
-            return 2; // 2 meters above ground (will be added to terrain height)
+            return 2; // 2 meters above ground
         }
 
         // For airborne aircraft, convert feet to meters
-        // VATSIM altitude is pressure altitude (MSL)
         const altitudeMeters = altitudeFeet * this.FEET_TO_METERS;
 
-        // Approximate: aircraft altitude relative to airport elevation
-        // This gives AGL-like altitude for local area
+        // Altitude relative to airport elevation (AGL-like for local area)
         const agl = altitudeMeters - this.centerElevation;
 
-        // IMPORTANT: Never go underground - minimum 0m AGL
-        // For airborne aircraft, minimum 10m
-        return Math.max(0, agl);
+        // Never go underground - minimum 10m for airborne
+        return Math.max(10, agl);
+    }
+
+    /**
+     * Parse aircraft type from VATSIM flight plan
+     */
+    parseAircraftType(typeStr) {
+        if (!typeStr) return 'A320';
+
+        // Use model manager's parsing if available
+        if (this.modelManager) {
+            return this.modelManager.parseVatsimType(typeStr);
+        }
+
+        let type = typeStr.toUpperCase().trim();
+
+        // Handle ICAO format with equipment suffix: "B738/L" -> "B738"
+        if (type.includes('/')) {
+            const parts = type.split('/');
+            if (parts.length >= 2) {
+                if (parts[0].length === 1) {
+                    type = parts[1];
+                } else {
+                    type = parts[0];
+                }
+            }
+        }
+
+        // Remove common suffixes
+        type = type.replace(/[-_].*$/, '');
+
+        return type;
     }
 
     /**
@@ -145,69 +160,67 @@ class VatsimService {
                 // Convert altitude from VATSIM feet to meters AGL
                 const altitudeAGL = this.convertAltitude(
                     pilot.altitude,
-                    pilot.groundspeed,
-                    pilot.latitude,
-                    pilot.longitude
+                    pilot.groundspeed
                 );
+
+                // Parse aircraft type
+                const aircraftType = this.parseAircraftType(pilot.flight_plan?.aircraft_short);
 
                 const existing = this.pilots.get(pilot.callsign);
 
                 if (existing) {
-                    // Update existing pilot - set new target for interpolation
-                    existing.prevLat = existing.currentLat;
-                    existing.prevLon = existing.currentLon;
-                    existing.prevAlt = existing.currentAlt;
-                    existing.prevHdg = existing.currentHdg;
-
+                    // Update existing pilot
                     existing.targetLat = pilot.latitude;
                     existing.targetLon = pilot.longitude;
                     existing.targetAlt = altitudeAGL;
                     existing.targetHdg = pilot.heading;
-
                     existing.lastUpdate = now;
                     existing.groundspeed = pilot.groundspeed;
+
+                    // Update aircraft manager
+                    this.aircraftManager.updateAircraftPosition(pilot.callsign, {
+                        lat: pilot.latitude,
+                        lon: pilot.longitude,
+                        altitude: altitudeAGL,
+                        heading: pilot.heading,
+                        speed: pilot.groundspeed
+                    });
                 } else {
                     // New pilot
                     this.pilots.set(pilot.callsign, {
                         callsign: pilot.callsign,
-                        // Current interpolated position
-                        currentLat: pilot.latitude,
-                        currentLon: pilot.longitude,
-                        currentAlt: altitudeAGL,
-                        currentHdg: pilot.heading,
-                        // Previous position (for interpolation start)
-                        prevLat: pilot.latitude,
-                        prevLon: pilot.longitude,
-                        prevAlt: altitudeAGL,
-                        prevHdg: pilot.heading,
-                        // Target position (for interpolation end)
+                        lat: pilot.latitude,
+                        lon: pilot.longitude,
+                        alt: altitudeAGL,
+                        hdg: pilot.heading,
                         targetLat: pilot.latitude,
                         targetLon: pilot.longitude,
                         targetAlt: altitudeAGL,
                         targetHdg: pilot.heading,
-                        // Meta
                         lastUpdate: now,
                         groundspeed: pilot.groundspeed,
-                        aircraft: this.parseAircraftType(pilot.flight_plan?.aircraft_short),
+                        aircraft: aircraftType,
                         departure: pilot.flight_plan?.departure,
-                        arrival: pilot.flight_plan?.arrival
+                        arrival: pilot.flight_plan?.arrival,
+                        route: pilot.flight_plan?.route
                     });
 
                     // Add to scene
                     this.aircraftManager.addAircraft({
                         callsign: pilot.callsign,
-                        type: this.parseAircraftType(pilot.flight_plan?.aircraft_short),
+                        type: aircraftType,
                         lat: pilot.latitude,
                         lon: pilot.longitude,
                         altitude: altitudeAGL,
                         heading: pilot.heading,
+                        speed: pilot.groundspeed,
                         isVatsim: true
                     });
                 }
             }
 
             // Remove pilots that are no longer nearby
-            for (const [callsign, pilot] of this.pilots.entries()) {
+            for (const [callsign] of this.pilots.entries()) {
                 if (!seenCallsigns.has(callsign)) {
                     this.aircraftManager.removeByCallsign(callsign);
                     this.pilots.delete(callsign);
@@ -219,53 +232,6 @@ class VatsimService {
         } catch (e) {
             console.warn('Failed to fetch VATSIM data:', e.message);
         }
-    }
-
-    /**
-     * Update aircraft positions (smooth interpolation)
-     * Called 30+ times per second for smooth movement
-     */
-    updatePositions() {
-        if (!this.enabled) return;
-
-        const now = Date.now();
-
-        for (const [callsign, pilot] of this.pilots.entries()) {
-            const timeSinceUpdate = now - pilot.lastUpdate;
-            // Interpolation factor (0 to 1 over 15 seconds, the fetch interval)
-            const t = Math.min(1, timeSinceUpdate / this.fetchIntervalMs);
-
-            // Lerp positions
-            pilot.currentLat = this.lerp(pilot.prevLat, pilot.targetLat, t);
-            pilot.currentLon = this.lerp(pilot.prevLon, pilot.targetLon, t);
-            pilot.currentAlt = this.lerp(pilot.prevAlt, pilot.targetAlt, t);
-            pilot.currentHdg = this.lerpAngle(pilot.prevHdg, pilot.targetHdg, t);
-
-            // Update aircraft in scene
-            this.aircraftManager.updateAircraftPosition(callsign, {
-                lat: pilot.currentLat,
-                lon: pilot.currentLon,
-                altitude: pilot.currentAlt,
-                heading: pilot.currentHdg
-            });
-        }
-    }
-
-    /**
-     * Linear interpolation
-     */
-    lerp(a, b, t) {
-        return a + (b - a) * t;
-    }
-
-    /**
-     * Angle interpolation (handles wraparound)
-     */
-    lerpAngle(a, b, t) {
-        let diff = b - a;
-        while (diff > 180) diff -= 360;
-        while (diff < -180) diff += 360;
-        return (a + diff * t + 360) % 360;
     }
 
     /**
@@ -287,25 +253,6 @@ class VatsimService {
     }
 
     /**
-     * Parse aircraft type from VATSIM flight plan
-     */
-    parseAircraftType(typeStr) {
-        if (!typeStr) return 'A320';
-
-        const type = typeStr.toUpperCase();
-
-        // Map common types
-        if (type.includes('B738') || type.includes('B737')) return 'B738';
-        if (type.includes('A320') || type.includes('A32')) return 'A320';
-        if (type.includes('B77')) return 'B77W';
-        if (type.includes('A380') || type.includes('A388')) return 'A388';
-        if (type.includes('E190') || type.includes('E19')) return 'E190';
-        if (type.includes('C172') || type.includes('C17')) return 'C172';
-
-        return 'A320'; // Default
-    }
-
-    /**
      * Get number of tracked pilots
      */
     getPilotCount() {
@@ -317,6 +264,13 @@ class VatsimService {
      */
     getPilots() {
         return Array.from(this.pilots.values());
+    }
+
+    /**
+     * Get pilot info by callsign
+     */
+    getPilotInfo(callsign) {
+        return this.pilots.get(callsign) || null;
     }
 }
 

@@ -214,12 +214,49 @@
                 <div class="form-group">
                     <label>Typ:</label>
                     <select id="ac-type">
-                        <option value="A320">Airbus A320</option>
-                        <option value="B738">Boeing 737-800</option>
-                        <option value="B77W">Boeing 777-300ER</option>
-                        <option value="A388">Airbus A380</option>
-                        <option value="E190">Embraer E190</option>
-                        <option value="C172">Cessna 172</option>
+                        <optgroup label="Airbus Narrowbody">
+                            <option value="A319">Airbus A319</option>
+                            <option value="A320" selected>Airbus A320</option>
+                            <option value="A321">Airbus A321</option>
+                        </optgroup>
+                        <optgroup label="Airbus Widebody">
+                            <option value="A332">Airbus A330-200</option>
+                            <option value="A333">Airbus A330-300</option>
+                            <option value="A359">Airbus A350-900</option>
+                            <option value="A380">Airbus A380</option>
+                        </optgroup>
+                        <optgroup label="Boeing Narrowbody">
+                            <option value="B737">Boeing 737-700</option>
+                            <option value="B738">Boeing 737-800</option>
+                            <option value="B739">Boeing 737-900</option>
+                        </optgroup>
+                        <optgroup label="Boeing Widebody">
+                            <option value="B744">Boeing 747-400</option>
+                            <option value="B748">Boeing 747-8</option>
+                            <option value="B763">Boeing 767-300</option>
+                            <option value="B77W">Boeing 777-300ER</option>
+                            <option value="B788">Boeing 787-8</option>
+                            <option value="B789">Boeing 787-9</option>
+                        </optgroup>
+                        <optgroup label="Regional">
+                            <option value="E190">Embraer E190</option>
+                            <option value="E195">Embraer E195</option>
+                            <option value="CRJ9">CRJ-900</option>
+                            <option value="AT72">ATR 72</option>
+                            <option value="DH8D">Dash 8-400</option>
+                        </optgroup>
+                        <optgroup label="General Aviation">
+                            <option value="C172">Cessna 172</option>
+                            <option value="C182">Cessna 182</option>
+                            <option value="C208">Cessna Caravan</option>
+                            <option value="SR22">Cirrus SR22</option>
+                            <option value="PC12">Pilatus PC-12</option>
+                        </optgroup>
+                        <optgroup label="Business Jets">
+                            <option value="C550">Cessna Citation II</option>
+                            <option value="C56X">Citation Excel</option>
+                            <option value="GLF5">Gulfstream G550</option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="form-group">
@@ -284,6 +321,7 @@
     <script src="src/js/utils/geojsonLoader.js"></script>
     <script src="src/js/core/towerCamera.js"></script>
     <script src="src/js/core/airportOverlay.js"></script>
+    <script src="src/js/core/modelManager.js"></script>
     <script src="src/js/core/aircraftManager.js"></script>
     <script src="src/js/services/metarService.js"></script>
     <script src="src/js/services/vatsimService.js"></script>

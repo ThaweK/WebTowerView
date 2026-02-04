@@ -1,316 +1,139 @@
 /**
- * Aircraft Manager - Advanced 3D Aircraft Rendering
- * Creates realistic 3D aircraft models using Cesium entities with proper terrain sync
+ * Aircraft Manager - Optimized 3D Aircraft Rendering with glTF Models
+ * Uses single Cesium Entity per aircraft with glTF models for better performance
  */
 
 class AircraftManager {
-    constructor(viewer) {
+    constructor(viewer, modelManager) {
         this.viewer = viewer;
+        this.modelManager = modelManager;
         this.aircraft = new Map();
         this.dataSource = new Cesium.CustomDataSource('aircraft');
         viewer.dataSources.add(this.dataSource);
 
         this.nextId = 1;
 
-        // Aircraft color schemes by airline prefix
-        this.airlineColors = {
-            'LOT': { fuselage: '#FFFFFF', tail: '#003366', accent: '#DC0032' },
-            'RYR': { fuselage: '#003366', tail: '#F7C82E', accent: '#F7C82E' },
-            'WZZ': { fuselage: '#E20074', tail: '#E20074', accent: '#FFFFFF' },
-            'DLH': { fuselage: '#FFFFFF', tail: '#0A1F44', accent: '#F0AB00' },
-            'BAW': { fuselage: '#FFFFFF', tail: '#BA0C2F', accent: '#012169' },
-            'AFR': { fuselage: '#FFFFFF', tail: '#002157', accent: '#ED1B2E' },
-            'UAE': { fuselage: '#FFFFFF', tail: '#D4A855', accent: '#007D4A' },
-            'AAL': { fuselage: '#C6C6C6', tail: '#0078D2', accent: '#BF0D3E' },
-            'UAL': { fuselage: '#FFFFFF', tail: '#002244', accent: '#00AEEF' },
-            'SWA': { fuselage: '#304CB2', tail: '#FFBF27', accent: '#FF0000' },
-            'default': { fuselage: '#FFFFFF', tail: '#333333', accent: '#FF6600' }
-        };
+        // Reference position for relative-to-center rendering (reduces float precision issues)
+        this.referencePosition = null;
 
-        // Setup render loop for smooth updates
+        // Setup optimized render loop
         this.setupRenderLoop();
     }
 
     /**
-     * Setup render loop for synchronized position updates
+     * Set reference position for RTC rendering
+     * Should be called when changing airports
+     */
+    setReferencePosition(lat, lon) {
+        this.referencePosition = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+        console.log(`AircraftManager: Reference position set to ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+    }
+
+    /**
+     * Setup render loop for smooth position interpolation
      */
     setupRenderLoop() {
+        // Use scene preRender for smooth updates
         this.viewer.scene.preRender.addEventListener(() => {
-            // Update all VATSIM aircraft positions smoothly
+            const now = Date.now();
+
             for (const aircraft of this.aircraft.values()) {
-                if (aircraft.isVatsim && aircraft.needsUpdate) {
-                    this.updateEntityPositions(aircraft);
+                if (aircraft.isVatsim) {
+                    // Interpolate towards target position
+                    this.interpolatePosition(aircraft, now);
                 }
             }
         });
     }
 
     /**
-     * Get airline colors from callsign
+     * Smooth position interpolation for VATSIM aircraft
      */
-    getAirlineColors(callsign) {
-        const prefix = callsign.substring(0, 3).toUpperCase();
-        return this.airlineColors[prefix] || this.airlineColors['default'];
+    interpolatePosition(aircraft, now) {
+        const elapsed = now - aircraft.lastUpdate;
+        // Interpolation over 2 seconds (VATSIM update interval)
+        const t = Math.min(1.0, elapsed / 2000);
+
+        // Smooth interpolation
+        const smoothT = this.smoothstep(t);
+
+        aircraft.currentLat = this.lerp(aircraft.prevLat, aircraft.targetLat, smoothT);
+        aircraft.currentLon = this.lerp(aircraft.prevLon, aircraft.targetLon, smoothT);
+        aircraft.currentAlt = this.lerp(aircraft.prevAlt, aircraft.targetAlt, smoothT);
+        aircraft.currentHdg = this.lerpAngle(aircraft.prevHdg, aircraft.targetHdg, smoothT);
+
+        // Update displayed position/orientation
+        aircraft.lat = aircraft.currentLat;
+        aircraft.lon = aircraft.currentLon;
+        aircraft.altitude = aircraft.currentAlt;
+        aircraft.heading = aircraft.currentHdg;
     }
 
     /**
-     * Create 3D aircraft model using multiple entities
+     * Smoothstep function for eased interpolation
      */
-    createAircraftEntities(id, typeInfo, colors, lat, lon, altitude, heading) {
-        const entities = [];
-
-        // Aircraft dimensions
-        const fuselageLength = typeInfo.length;
-        const fuselageRadius = typeInfo.length * 0.08;
-        const wingspan = typeInfo.wingspan;
-        const wingChord = typeInfo.length * 0.15;
-        const wingThickness = fuselageRadius * 0.15;
-        const tailHeight = typeInfo.length * 0.2;
-        const engineRadius = fuselageRadius * 0.4;
-        const engineLength = typeInfo.length * 0.12;
-
-        // Position callback for synchronized updates
-        const createPositionCallback = (offsetX, offsetY, offsetZ) => {
-            return new Cesium.CallbackProperty((time, result) => {
-                const aircraft = this.aircraft.get(id);
-                if (!aircraft) return Cesium.Cartesian3.ZERO;
-
-                const basePosition = Cesium.Cartesian3.fromDegrees(
-                    aircraft.lon, aircraft.lat, aircraft.altitude
-                );
-
-                // Apply local offset based on heading
-                // Heading is clockwise from North: 0=N, 90=E, 180=S, 270=W
-                const headingRad = Cesium.Math.toRadians(aircraft.heading);
-                // Rotate offset to ENU coordinates: offsetY=forward (nose), offsetX=right
-                const rotatedX = offsetX * Math.cos(headingRad) + offsetY * Math.sin(headingRad);
-                const rotatedY = -offsetX * Math.sin(headingRad) + offsetY * Math.cos(headingRad);
-
-                const transform = Cesium.Transforms.eastNorthUpToFixedFrame(basePosition);
-                const localOffset = new Cesium.Cartesian3(rotatedX, rotatedY, offsetZ);
-
-                return Cesium.Matrix4.multiplyByPoint(transform, localOffset, result || new Cesium.Cartesian3());
-            }, false);
-        };
-
-        // Orientation callback
-        const createOrientationCallback = () => {
-            return new Cesium.CallbackProperty(() => {
-                const aircraft = this.aircraft.get(id);
-                if (!aircraft) return Cesium.Quaternion.IDENTITY;
-
-                const position = Cesium.Cartesian3.fromDegrees(
-                    aircraft.lon, aircraft.lat, aircraft.altitude
-                );
-                // Cesium HeadingPitchRoll: heading 0 = North, positive = clockwise
-                const headingRad = Cesium.Math.toRadians(aircraft.heading);
-                const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
-                return Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
-            }, false);
-        };
-
-        const orientation = createOrientationCallback();
-
-        // Fuselage (main body)
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_fuselage`,
-            position: createPositionCallback(0, 0, 0),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(fuselageRadius * 2, fuselageLength, fuselageRadius * 2),
-                material: Cesium.Color.fromCssColorString(colors.fuselage),
-                outline: true,
-                outlineColor: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.3, new Cesium.Color()),
-                outlineWidth: 1
-            }
-        }));
-
-        // Nose cone
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_nose`,
-            position: createPositionCallback(0, fuselageLength / 2 + fuselageLength * 0.04, 0),
-            orientation: orientation,
-            ellipsoid: {
-                radii: new Cesium.Cartesian3(fuselageRadius * 0.8, fuselageLength * 0.08, fuselageRadius * 0.8),
-                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.1, new Cesium.Color())
-            }
-        }));
-
-        // Cockpit windows
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_cockpit`,
-            position: createPositionCallback(0, fuselageLength * 0.4, fuselageRadius * 0.7),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(fuselageRadius * 1.2, fuselageLength * 0.1, fuselageRadius * 0.4),
-                material: Cesium.Color.fromCssColorString('#1a1a2e')
-            }
-        }));
-
-        // Left wing
-        const wingOffsetY = -fuselageLength * 0.05;
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_wing_left`,
-            position: createPositionCallback(-wingspan / 4 - fuselageRadius / 2, wingOffsetY, 0),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(wingspan / 2 - fuselageRadius, wingChord, wingThickness),
-                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color()),
-                outline: true,
-                outlineColor: Cesium.Color.GRAY
-            }
-        }));
-
-        // Right wing
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_wing_right`,
-            position: createPositionCallback(wingspan / 4 + fuselageRadius / 2, wingOffsetY, 0),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(wingspan / 2 - fuselageRadius, wingChord, wingThickness),
-                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color()),
-                outline: true,
-                outlineColor: Cesium.Color.GRAY
-            }
-        }));
-
-        // Left winglet
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_winglet_left`,
-            position: createPositionCallback(-wingspan / 2, wingOffsetY, fuselageRadius * 0.4),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(wingThickness * 2, wingChord * 0.4, fuselageRadius * 0.8),
-                material: Cesium.Color.fromCssColorString(colors.fuselage)
-            }
-        }));
-
-        // Right winglet
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_winglet_right`,
-            position: createPositionCallback(wingspan / 2, wingOffsetY, fuselageRadius * 0.4),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(wingThickness * 2, wingChord * 0.4, fuselageRadius * 0.8),
-                material: Cesium.Color.fromCssColorString(colors.fuselage)
-            }
-        }));
-
-        // Vertical stabilizer (tail fin)
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_vertical_stab`,
-            position: createPositionCallback(0, -fuselageLength / 2 + fuselageLength * 0.1, fuselageRadius + tailHeight / 2),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(wingThickness, fuselageLength * 0.15, tailHeight),
-                material: Cesium.Color.fromCssColorString(colors.tail),
-                outline: true,
-                outlineColor: Cesium.Color.fromCssColorString(colors.tail).darken(0.2, new Cesium.Color())
-            }
-        }));
-
-        // Horizontal stabilizers
-        const hstabSpan = wingspan * 0.3;
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_horizontal_stab`,
-            position: createPositionCallback(0, -fuselageLength / 2 + fuselageLength * 0.05, fuselageRadius * 0.7),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(hstabSpan, wingChord * 0.5, wingThickness),
-                material: Cesium.Color.fromCssColorString(colors.fuselage).darken(0.05, new Cesium.Color())
-            }
-        }));
-
-        // Left engine
-        const engineOffsetX = wingspan * 0.25;
-        const engineOffsetY = wingOffsetY + wingChord * 0.1;
-        const engineOffsetZ = -fuselageRadius * 0.6;
-
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_engine_left`,
-            position: createPositionCallback(-engineOffsetX, engineOffsetY, engineOffsetZ),
-            orientation: orientation,
-            cylinder: {
-                length: engineLength,
-                topRadius: engineRadius,
-                bottomRadius: engineRadius * 0.9,
-                material: Cesium.Color.fromCssColorString('#404040')
-            }
-        }));
-
-        // Left engine intake
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_intake_left`,
-            position: createPositionCallback(-engineOffsetX, engineOffsetY + engineLength / 2, engineOffsetZ),
-            orientation: orientation,
-            cylinder: {
-                length: engineLength * 0.15,
-                topRadius: engineRadius * 1.1,
-                bottomRadius: engineRadius * 1.1,
-                material: Cesium.Color.fromCssColorString('#1a1a1a')
-            }
-        }));
-
-        // Right engine
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_engine_right`,
-            position: createPositionCallback(engineOffsetX, engineOffsetY, engineOffsetZ),
-            orientation: orientation,
-            cylinder: {
-                length: engineLength,
-                topRadius: engineRadius,
-                bottomRadius: engineRadius * 0.9,
-                material: Cesium.Color.fromCssColorString('#404040')
-            }
-        }));
-
-        // Right engine intake
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_intake_right`,
-            position: createPositionCallback(engineOffsetX, engineOffsetY + engineLength / 2, engineOffsetZ),
-            orientation: orientation,
-            cylinder: {
-                length: engineLength * 0.15,
-                topRadius: engineRadius * 1.1,
-                bottomRadius: engineRadius * 1.1,
-                material: Cesium.Color.fromCssColorString('#1a1a1a')
-            }
-        }));
-
-        // Accent stripe
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_stripe`,
-            position: createPositionCallback(0, 0, fuselageRadius * 0.3),
-            orientation: orientation,
-            box: {
-                dimensions: new Cesium.Cartesian3(fuselageRadius * 2.02, fuselageLength * 0.6, fuselageRadius * 0.15),
-                material: Cesium.Color.fromCssColorString(colors.accent)
-            }
-        }));
-
-        // Label
-        entities.push(this.dataSource.entities.add({
-            id: `${id}_label`,
-            position: createPositionCallback(0, 0, fuselageRadius * 2 + 10),
-            label: {
-                text: this.aircraft.get(id)?.callsign || id,
-                font: 'bold 14px monospace',
-                fillColor: Cesium.Color.fromCssColorString(Config.aircraft.labelColor),
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 3,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -5),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scale: 1.0
-            }
-        }));
-
-        return entities;
+    smoothstep(t) {
+        return t * t * (3 - 2 * t);
     }
 
     /**
-     * Add an aircraft
+     * Linear interpolation
+     */
+    lerp(a, b, t) {
+        return a + (b - a) * t;
+    }
+
+    /**
+     * Angle interpolation (handles wraparound at 0/360)
+     */
+    lerpAngle(a, b, t) {
+        let diff = b - a;
+        while (diff > 180) diff -= 360;
+        while (diff < -180) diff += 360;
+        return ((a + diff * t) + 360) % 360;
+    }
+
+    /**
+     * Create position callback property for an aircraft
+     */
+    createPositionProperty(id) {
+        return new Cesium.CallbackProperty(() => {
+            const aircraft = this.aircraft.get(id);
+            if (!aircraft) return Cesium.Cartesian3.ZERO;
+
+            return Cesium.Cartesian3.fromDegrees(
+                aircraft.lon,
+                aircraft.lat,
+                aircraft.altitude
+            );
+        }, false);
+    }
+
+    /**
+     * Create orientation callback property for an aircraft
+     */
+    createOrientationProperty(id) {
+        return new Cesium.CallbackProperty(() => {
+            const aircraft = this.aircraft.get(id);
+            if (!aircraft) return Cesium.Quaternion.IDENTITY;
+
+            const position = Cesium.Cartesian3.fromDegrees(
+                aircraft.lon,
+                aircraft.lat,
+                aircraft.altitude
+            );
+
+            // Cesium heading: 0 = North, positive = clockwise (East)
+            // Add 180 degrees offset as models typically face -Y (south)
+            const headingRad = Cesium.Math.toRadians(aircraft.heading);
+            const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
+
+            return Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+        }, false);
+    }
+
+    /**
+     * Add an aircraft to the scene
      */
     addAircraft(options) {
         const {
@@ -324,6 +147,7 @@ class AircraftManager {
             isVatsim = false
         } = options;
 
+        // Check for existing aircraft with same callsign
         const existing = this.findByCallsign(callsign);
         if (existing) {
             this.updateAircraft(existing.id, { lat, lon, altitude, heading, speed });
@@ -331,120 +155,205 @@ class AircraftManager {
         }
 
         const id = `aircraft_${this.nextId++}`;
-        const typeInfo = Config.aircraft.types[type] || Config.aircraft.types['A320'];
-        const colors = this.getAirlineColors(callsign);
 
-        // Store aircraft data first (needed for position callbacks)
+        // Get model information
+        const modelUri = this.modelManager.getModelUri(type);
+        const modelScale = this.modelManager.getModelScale(type);
+        const aircraftName = this.modelManager.getAircraftName(type);
+        const airlineInfo = this.modelManager.getAirlineInfo(callsign);
+
+        // Store aircraft data
         const aircraftData = {
             id,
-            entities: [],
             callsign,
             type,
-            typeInfo,
-            colors,
+            aircraftName,
+            airlineInfo,
+            // Current position
             lat,
             lon,
             altitude,
             heading,
             speed,
+            // Interpolation state (for VATSIM)
+            currentLat: lat,
+            currentLon: lon,
+            currentAlt: altitude,
+            currentHdg: heading,
+            prevLat: lat,
+            prevLon: lon,
+            prevAlt: altitude,
+            prevHdg: heading,
             targetLat: lat,
             targetLon: lon,
             targetAlt: altitude,
             targetHdg: heading,
+            // State
             lastUpdate: Date.now(),
-            isVatsim: isVatsim,
-            needsUpdate: false
+            isVatsim,
+            entity: null,
+            labelEntity: null
         };
 
         this.aircraft.set(id, aircraftData);
 
-        // Create entities after data is stored
-        aircraftData.entities = this.createAircraftEntities(id, typeInfo, colors, lat, lon, altitude, heading);
+        // Create the aircraft entity with glTF model
+        const entity = this.dataSource.entities.add({
+            id: id,
+            position: this.createPositionProperty(id),
+            orientation: this.createOrientationProperty(id),
+            model: {
+                uri: modelUri,
+                scale: modelScale,
+                minimumPixelSize: 32,  // Always visible at minimum size
+                maximumScale: 20000,    // Maximum scale when close
+                runAnimations: false,
+                clampAnimations: true,
+                shadows: Cesium.ShadowMode.DISABLED,  // Disable shadows for performance
+                silhouetteColor: Cesium.Color.WHITE,
+                silhouetteSize: 0,
+                colorBlendMode: Cesium.ColorBlendMode.HIGHLIGHT,
+                colorBlendAmount: 0.0
+            }
+        });
 
-        // Update label text
-        const labelEntity = aircraftData.entities.find(e => e.id === `${id}_label`);
-        if (labelEntity) {
-            labelEntity.label.text = callsign;
-        }
+        aircraftData.entity = entity;
+
+        // Create label entity separately for better control
+        const labelEntity = this.dataSource.entities.add({
+            id: `${id}_label`,
+            position: this.createPositionProperty(id),
+            label: {
+                text: callsign,
+                font: Config.aircraft.labelFont,
+                fillColor: Cesium.Color.fromCssColorString(Config.aircraft.labelColor),
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: Config.aircraft.labelOutlineWidth,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                pixelOffset: new Cesium.Cartesian2(0, -40),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                scaleByDistance: new Cesium.NearFarScalar(100, 1.2, 50000, 0.5),
+                translucencyByDistance: new Cesium.NearFarScalar(100, 1.0, 100000, 0.3),
+                showBackground: true,
+                backgroundColor: new Cesium.Color(0, 0, 0, 0.5)
+            }
+        });
+
+        aircraftData.labelEntity = labelEntity;
 
         this.updateAircraftList();
         return id;
     }
 
     /**
-     * Update entity positions (called from render loop)
-     */
-    updateEntityPositions(aircraft) {
-        aircraft.needsUpdate = false;
-        // Position callbacks automatically handle updates
-    }
-
-    /**
-     * Update aircraft position/heading
+     * Update aircraft position and state
      */
     updateAircraft(id, updates) {
         const aircraft = this.aircraft.get(id);
         if (!aircraft) return;
 
         if (aircraft.isVatsim) {
+            // For VATSIM aircraft, update targets for interpolation
+            const now = Date.now();
+
+            // Save current as previous
+            aircraft.prevLat = aircraft.currentLat;
+            aircraft.prevLon = aircraft.currentLon;
+            aircraft.prevAlt = aircraft.currentAlt;
+            aircraft.prevHdg = aircraft.currentHdg;
+
+            // Set new targets
             if (updates.lat !== undefined) aircraft.targetLat = updates.lat;
             if (updates.lon !== undefined) aircraft.targetLon = updates.lon;
             if (updates.altitude !== undefined) aircraft.targetAlt = updates.altitude;
             if (updates.heading !== undefined) aircraft.targetHdg = updates.heading;
             if (updates.speed !== undefined) aircraft.speed = updates.speed;
 
-            // Smooth interpolation
-            const lerpFactor = 0.15;
-            aircraft.lat = this.lerp(aircraft.lat, aircraft.targetLat, lerpFactor);
-            aircraft.lon = this.lerp(aircraft.lon, aircraft.targetLon, lerpFactor);
-            aircraft.altitude = this.lerp(aircraft.altitude, aircraft.targetAlt, lerpFactor);
-            aircraft.heading = this.lerpAngle(aircraft.heading, aircraft.targetHdg, lerpFactor);
-
-            aircraft.needsUpdate = true;
+            aircraft.lastUpdate = now;
         } else {
-            if (updates.lat !== undefined) aircraft.lat = updates.lat;
-            if (updates.lon !== undefined) aircraft.lon = updates.lon;
-            if (updates.altitude !== undefined) aircraft.altitude = updates.altitude;
-            if (updates.heading !== undefined) aircraft.heading = updates.heading;
+            // Direct update for manual aircraft
+            if (updates.lat !== undefined) {
+                aircraft.lat = updates.lat;
+                aircraft.currentLat = updates.lat;
+                aircraft.targetLat = updates.lat;
+                aircraft.prevLat = updates.lat;
+            }
+            if (updates.lon !== undefined) {
+                aircraft.lon = updates.lon;
+                aircraft.currentLon = updates.lon;
+                aircraft.targetLon = updates.lon;
+                aircraft.prevLon = updates.lon;
+            }
+            if (updates.altitude !== undefined) {
+                aircraft.altitude = updates.altitude;
+                aircraft.currentAlt = updates.altitude;
+                aircraft.targetAlt = updates.altitude;
+                aircraft.prevAlt = updates.altitude;
+            }
+            if (updates.heading !== undefined) {
+                aircraft.heading = updates.heading;
+                aircraft.currentHdg = updates.heading;
+                aircraft.targetHdg = updates.heading;
+                aircraft.prevHdg = updates.heading;
+            }
             if (updates.speed !== undefined) aircraft.speed = updates.speed;
-            if (updates.callsign !== undefined) {
+
+            // Update callsign if changed
+            if (updates.callsign !== undefined && aircraft.labelEntity) {
                 aircraft.callsign = updates.callsign;
-                const labelEntity = aircraft.entities.find(e => e.id.endsWith('_label'));
-                if (labelEntity) {
-                    labelEntity.label.text = updates.callsign;
-                }
+                aircraft.labelEntity.label.text = updates.callsign;
             }
         }
     }
 
-    lerp(a, b, t) {
-        return a + (b - a) * t;
+    /**
+     * Update aircraft model (when type changes)
+     */
+    updateAircraftModel(id, newType) {
+        const aircraft = this.aircraft.get(id);
+        if (!aircraft || !aircraft.entity) return;
+
+        const modelUri = this.modelManager.getModelUri(newType);
+        const modelScale = this.modelManager.getModelScale(newType);
+
+        aircraft.type = newType;
+        aircraft.aircraftName = this.modelManager.getAircraftName(newType);
+
+        // Update model properties
+        aircraft.entity.model.uri = modelUri;
+        aircraft.entity.model.scale = modelScale;
     }
 
-    lerpAngle(a, b, t) {
-        let diff = b - a;
-        while (diff > 180) diff -= 360;
-        while (diff < -180) diff += 360;
-        return ((a + diff * t) + 360) % 360;
-    }
-
+    /**
+     * Remove an aircraft from the scene
+     */
     removeAircraft(id) {
         const aircraft = this.aircraft.get(id);
         if (!aircraft) return;
 
-        // Remove all entities
-        for (const entity of aircraft.entities) {
-            this.dataSource.entities.remove(entity);
+        // Remove entities
+        if (aircraft.entity) {
+            this.dataSource.entities.remove(aircraft.entity);
+        }
+        if (aircraft.labelEntity) {
+            this.dataSource.entities.remove(aircraft.labelEntity);
         }
 
         this.aircraft.delete(id);
         this.updateAircraftList();
     }
 
+    /**
+     * Get aircraft by ID
+     */
     getAircraft(id) {
         return this.aircraft.get(id) || null;
     }
 
+    /**
+     * Find aircraft by callsign
+     */
     findByCallsign(callsign) {
         for (const aircraft of this.aircraft.values()) {
             if (aircraft.callsign === callsign) {
@@ -454,6 +363,9 @@ class AircraftManager {
         return null;
     }
 
+    /**
+     * Update aircraft position by callsign
+     */
     updateAircraftPosition(callsign, updates) {
         const aircraft = this.findByCallsign(callsign);
         if (aircraft) {
@@ -461,6 +373,9 @@ class AircraftManager {
         }
     }
 
+    /**
+     * Remove aircraft by callsign
+     */
     removeByCallsign(callsign) {
         const aircraft = this.findByCallsign(callsign);
         if (aircraft) {
@@ -468,32 +383,51 @@ class AircraftManager {
         }
     }
 
+    /**
+     * Get all aircraft
+     */
     getAllAircraft() {
         return Array.from(this.aircraft.values());
     }
 
+    /**
+     * Clear all aircraft
+     */
     clearAll() {
         for (const aircraft of this.aircraft.values()) {
-            for (const entity of aircraft.entities) {
-                this.dataSource.entities.remove(entity);
+            if (aircraft.entity) {
+                this.dataSource.entities.remove(aircraft.entity);
+            }
+            if (aircraft.labelEntity) {
+                this.dataSource.entities.remove(aircraft.labelEntity);
             }
         }
         this.aircraft.clear();
         this.updateAircraftList();
     }
 
+    /**
+     * Focus camera on an aircraft
+     */
     focusOn(id) {
         const aircraft = this.aircraft.get(id);
         if (!aircraft) return;
 
+        const headingRad = Cesium.Math.toRadians(aircraft.heading);
+
+        // Position camera behind and above the aircraft
+        const offsetDistance = 300; // meters behind
+        const offsetLat = aircraft.lat - (offsetDistance / 111000) * Math.cos(headingRad);
+        const offsetLon = aircraft.lon - (offsetDistance / (111000 * Math.cos(Cesium.Math.toRadians(aircraft.lat)))) * Math.sin(headingRad);
+
         this.viewer.camera.flyTo({
             destination: Cesium.Cartesian3.fromDegrees(
-                aircraft.lon - 0.002 * Math.sin(Cesium.Math.toRadians(aircraft.heading)),
-                aircraft.lat - 0.002 * Math.cos(Cesium.Math.toRadians(aircraft.heading)),
+                offsetLon,
+                offsetLat,
                 aircraft.altitude + 100
             ),
             orientation: {
-                heading: Cesium.Math.toRadians(aircraft.heading),
+                heading: headingRad,
                 pitch: Cesium.Math.toRadians(-25),
                 roll: 0
             },
@@ -501,6 +435,27 @@ class AircraftManager {
         });
     }
 
+    /**
+     * Toggle aircraft labels visibility
+     */
+    setLabelsVisible(visible) {
+        for (const aircraft of this.aircraft.values()) {
+            if (aircraft.labelEntity) {
+                aircraft.labelEntity.show = visible;
+            }
+        }
+    }
+
+    /**
+     * Get aircraft count
+     */
+    getCount() {
+        return this.aircraft.size;
+    }
+
+    /**
+     * Update the aircraft list in the UI
+     */
     updateAircraftList() {
         const listEl = document.getElementById('aircraft-list');
         if (!listEl) return;
@@ -508,17 +463,22 @@ class AircraftManager {
         listEl.innerHTML = '';
 
         this.aircraft.forEach((ac, id) => {
+            if (ac.isVatsim) return; // Don't show VATSIM aircraft in manual list
+
             const item = document.createElement('div');
             item.className = 'aircraft-item';
+
+            const airlineText = ac.airlineInfo ? ` (${ac.airlineInfo.name})` : '';
+
             item.innerHTML = `
                 <div>
                     <span class="callsign">${ac.callsign}</span>
                     <span class="type">${ac.type}</span>
                 </div>
                 <div class="actions">
-                    <button class="btn-small" onclick="window.app.aircraftManager.focusOn('${id}')" title="Focus">👁</button>
-                    <button class="btn-small" onclick="window.Modals.editAircraft('${id}')" title="Edit">✏</button>
-                    <button class="btn-small remove" onclick="window.app.aircraftManager.removeAircraft('${id}')" title="Remove">×</button>
+                    <button class="btn-small" onclick="window.app.aircraftManager.focusOn('${id}')" title="Focus">O</button>
+                    <button class="btn-small" onclick="window.Modals.editAircraft('${id}')" title="Edit">E</button>
+                    <button class="btn-small remove" onclick="window.app.aircraftManager.removeAircraft('${id}')" title="Remove">X</button>
                 </div>
             `;
             listEl.appendChild(item);
