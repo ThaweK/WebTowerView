@@ -125,7 +125,7 @@ class AircraftManager {
 
             // Cesium heading: 0 = North, positive = clockwise (East)
             // Add 180 degrees offset as models typically face -Y (south)
-            const headingRad = Cesium.Math.toRadians(aircraft.heading);
+            const headingRad = Cesium.Math.toRadians(aircraft.heading) + Math.PI;
             const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
 
             return Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
